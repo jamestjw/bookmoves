@@ -166,20 +166,33 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   @impl true
   def handle_event("navigate", %{"fen" => fen}, socket) do
-    %{side: side} = socket.assigns
+    %{side: side, children: children, position_chain: position_chain} = socket.assigns
 
-    current_pos = Repertoire.get_position_by_fen(fen, side)
+    child = Enum.find(children, fn position -> position.fen == fen end)
 
-    if current_pos do
-      position_chain = build_position_chain(current_pos, side)
+    if child do
+      new_chain =
+        if is_list(position_chain) and position_chain != [] do
+          position_chain ++ [child]
+        else
+          build_position_chain(child, side)
+        end
 
-      {:noreply, apply_position_state(socket, side, current_pos, position_chain)}
+      {:noreply, apply_position_state(socket, side, child, new_chain)}
     else
-      {:noreply,
-       socket
-       |> assign(:current_fen, fen)
-       |> assign(:move_notation, "")
-       |> assign(:children, Repertoire.get_children(fen, side))}
+      current_pos = Repertoire.get_position_by_fen(fen, side)
+
+      if current_pos do
+        position_chain = build_position_chain(current_pos, side)
+
+        {:noreply, apply_position_state(socket, side, current_pos, position_chain)}
+      else
+        {:noreply,
+         socket
+         |> assign(:current_fen, fen)
+         |> assign(:move_notation, "")
+         |> assign(:children, Repertoire.get_children(fen, side))}
+      end
     end
   end
 
