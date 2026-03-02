@@ -45,16 +45,10 @@ defmodule BookmovesWeb.RepertoireLive.Show do
                 class="bg-base-200 rounded-lg p-3 flex items-center justify-between"
               >
                 <div class="flex items-center gap-3">
-                  <.chessboard
-                    id={"board-#{child.id}"}
-                    fen={child.fen}
-                    orientation={@side}
-                    class="w-24 h-24"
-                  />
                   <div>
-                    <span class="font-mono text-lg">{child.san}</span>
+                    <span class="font-mono text-lg">{build_notation(child, @side)}</span>
                     <p class="text-xs opacity-70">
-                      Interval: {child.interval_days}d, EF: {child.ease_factor}
+                      Last move: {child.san} | Interval: {child.interval_days}d, EF: {child.ease_factor}
                     </p>
                   </div>
                 </div>
@@ -96,5 +90,26 @@ defmodule BookmovesWeb.RepertoireLive.Show do
       children: children,
       due_count: due_count
     )
+  end
+
+  defp build_notation(%Repertoire.Position{} = position, side) do
+    build_notation_recursive(position, side, [])
+    |> Enum.reverse()
+    |> Enum.join(" ")
+  end
+
+  defp build_notation_recursive(%Repertoire.Position{san: nil}, _side, acc) do
+    acc
+  end
+
+  defp build_notation_recursive(%Repertoire.Position{} = position, side, acc) do
+    parent = Repertoire.get_position_by_fen(position.parent_fen, side)
+
+    if parent && parent.san do
+      acc = [parent.san | acc]
+      build_notation_recursive(parent, side, acc)
+    else
+      acc
+    end
   end
 end
