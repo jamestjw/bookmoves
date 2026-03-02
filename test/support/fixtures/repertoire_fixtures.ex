@@ -16,7 +16,7 @@ defmodule Bookmoves.RepertoireFixtures do
         fen: Position.starting_fen(),
         color_side: "white"
       }
-      |> Repertoire.create_position()
+      |> Repertoire.create_position_if_not_exists()
 
     position
   end

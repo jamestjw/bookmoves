@@ -114,6 +114,110 @@ defmodule Bookmoves.Repertoire do
   end
 
   @doc """
+  Fetches the position chain from root to current.
+  """
+  def get_position_chain(fen, color_side) when is_binary(fen) and is_binary(color_side) do
+    chain_columns = [
+      :id,
+      :fen,
+      :san,
+      :parent_fen,
+      :comment,
+      :color_side,
+      :next_review_at,
+      :last_reviewed_at,
+      :interval_days,
+      :ease_factor,
+      :repetitions,
+      :inserted_at,
+      :updated_at
+    ]
+
+    sql = """
+    WITH RECURSIVE chain(
+      id,
+      fen,
+      san,
+      parent_fen,
+      comment,
+      color_side,
+      next_review_at,
+      last_reviewed_at,
+      interval_days,
+      ease_factor,
+      repetitions,
+      inserted_at,
+      updated_at,
+      depth
+    ) AS (
+      SELECT
+        id,
+        fen,
+        san,
+        parent_fen,
+        comment,
+        color_side,
+        next_review_at,
+        last_reviewed_at,
+        interval_days,
+        ease_factor,
+        repetitions,
+        inserted_at,
+        updated_at,
+        0
+      FROM positions
+      WHERE fen = ? AND color_side = ?
+
+      UNION ALL
+
+      SELECT
+        p.id,
+        p.fen,
+        p.san,
+        p.parent_fen,
+        p.comment,
+        p.color_side,
+        p.next_review_at,
+        p.last_reviewed_at,
+        p.interval_days,
+        p.ease_factor,
+        p.repetitions,
+        p.inserted_at,
+        p.updated_at,
+        c.depth + 1
+      FROM positions p
+      JOIN chain c
+        ON p.fen = c.parent_fen AND p.color_side = c.color_side
+    )
+    SELECT
+      id,
+      fen,
+      san,
+      parent_fen,
+      comment,
+      color_side,
+      next_review_at,
+      last_reviewed_at,
+      interval_days,
+      ease_factor,
+      repetitions,
+      inserted_at,
+      updated_at
+    FROM chain
+    ORDER BY depth DESC
+    """
+
+    result = Ecto.Adapters.SQL.query!(Repo, sql, [fen, color_side])
+
+    Enum.map(result.rows, fn row ->
+      chain_columns
+      |> Enum.zip(row)
+      |> Map.new()
+      |> then(&struct(Position, &1))
+    end)
+  end
+
+  @doc """
   Creates multiple positions from a list of attribute maps.
   """
   def create_positions(attrs_list) do

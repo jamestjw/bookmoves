@@ -290,14 +290,6 @@ defmodule BookmovesWeb.RepertoireLive.Add do
   defp build_position_chain(nil, _side), do: []
 
   defp build_position_chain(%Repertoire.Position{} = position, side) do
-    parent_fen = position.parent_fen
-
-    if is_nil(parent_fen) do
-      [position]
-    else
-      parent = Repertoire.get_position_by_fen(parent_fen, side)
-      chain = if parent, do: build_position_chain(parent, side), else: []
-      chain ++ [position]
-    end
+    Repertoire.get_position_chain(position.fen, side)
   end
 end
