@@ -133,10 +133,9 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
     if existing_child do
       new_chain =
-        if is_list(position_chain) and position_chain != [] do
-          position_chain ++ [existing_child]
-        else
-          build_position_chain(existing_child, side)
+        case position_chain do
+          [_ | _] -> position_chain ++ [existing_child]
+          _ -> build_position_chain(existing_child, side)
         end
 
       {:noreply, apply_position_state(socket, side, existing_child, new_chain)}
