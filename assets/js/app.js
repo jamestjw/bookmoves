@@ -29,6 +29,7 @@ window.Chessboard = Chessboard;
 
 // Import custom hooks
 import { ChessboardHook } from "./hooks/chessboard"
+import { RewindHotkeys } from "./hooks/rewind"
 
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
@@ -40,7 +41,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, Chessboard: ChessboardHook},
+  hooks: {...colocatedHooks, Chessboard: ChessboardHook, RewindHotkeys},
 })
 
 // Show progress bar on live navigation and form submits
@@ -91,4 +92,3 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
-
