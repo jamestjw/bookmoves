@@ -118,7 +118,8 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   @impl true
   def handle_event("board-move", %{"san" => san, "fen" => new_fen}, socket) do
-    %{current_fen: current_fen, side: side} = socket.assigns
+    %{current_fen: current_fen, side: side, children: children, position_chain: position_chain} =
+      socket.assigns
 
     staged_move = %{
       san: san,
@@ -128,39 +129,39 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       comment: ""
     }
 
-    case Repertoire.get_position_by_fen(new_fen, side) do
-      %Repertoire.Position{} = position ->
-        position_chain =
-          if position.parent_fen == socket.assigns.current_fen do
-            (socket.assigns.position_chain || []) ++ [position]
-          else
-            build_position_chain(position, side)
-          end
+    existing_child = Enum.find(children, fn position -> position.fen == new_fen end)
 
-        {:noreply, apply_position_state(socket, side, position, position_chain)}
-
-      nil ->
-        case Repertoire.create_position_if_not_exists(staged_move) do
-          {:ok, %Repertoire.Position{} = position} ->
-            position_chain =
-              if position.parent_fen == socket.assigns.current_fen do
-                (socket.assigns.position_chain || []) ++ [position]
-              else
-                build_position_chain(position, side)
-              end
-
-            {:noreply,
-             socket
-             |> put_flash(:info, "Move added successfully")
-             |> apply_position_state(side, position, position_chain)}
-
-          {:error, changeset} ->
-            {:noreply,
-             socket
-             |> put_flash(:error, "Failed to add move: #{inspect(changeset.errors)}")
-             |> assign(:current_fen, new_fen)
-             |> assign(:move_notation, socket.assigns.move_notation <> " " <> san)}
+    if existing_child do
+      new_chain =
+        if is_list(position_chain) and position_chain != [] do
+          position_chain ++ [existing_child]
+        else
+          build_position_chain(existing_child, side)
         end
+
+      {:noreply, apply_position_state(socket, side, existing_child, new_chain)}
+    else
+      case Repertoire.create_position_if_not_exists(staged_move) do
+        {:ok, %Repertoire.Position{} = position} ->
+          new_chain =
+            if position.parent_fen == current_fen and is_list(position_chain) do
+              position_chain ++ [position]
+            else
+              build_position_chain(position, side)
+            end
+
+          {:noreply,
+           socket
+           |> put_flash(:info, "Move added successfully")
+           |> apply_position_state(side, position, new_chain)}
+
+        {:error, changeset} ->
+          {:noreply,
+           socket
+           |> put_flash(:error, "Failed to add move: #{inspect(changeset.errors)}")
+           |> assign(:current_fen, new_fen)
+           |> assign(:move_notation, socket.assigns.move_notation <> " " <> san)}
+      end
     end
   end
 
