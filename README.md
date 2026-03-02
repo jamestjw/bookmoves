@@ -1,28 +1,26 @@
 # Bookmoves
 
-Bookmoves is a Phoenix LiveView app for spaced repetition of chess openings.
+Bookmoves is a Phoenix LiveView app for spaced repetition training of chess opening repertoires.
 
-To start your Phoenix server:
+## Features
+
+- **Repertoire Management**: Build opening trees for White and Black sides
+- **Board-Based Input**: Add moves by dragging pieces on an interactive chessboard
+- **Tree Visualization**: See your full repertoire as a tree with saved and pending moves
+- **Spaced Repetition**: Automatic scheduling using simplified SM-2 algorithm
+- **Transposition Handling**: Same positions are merged automatically
+
+## Getting Started
 
 * Run `mix setup` to install and setup dependencies
 * Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+* Visit [`localhost:4000`](http://localhost:4000) from your browser
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+## Usage
 
-## What Is Implemented
-
-* Opening cards with `name`, `ECO`, and move sequence.
-* LiveView review queue at `/openings` showing cards due now.
-* Rating actions: `Again`, `Hard`, `Good`, `Easy`.
-* Automatic rescheduling using a simplified SM-2 style interval update.
-* Card detail/edit pages at `/openings/:id`.
-
-Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
-
-## Learn more
-
-* Official website: https://www.phoenixframework.org/
-* Guides: https://hexdocs.pm/phoenix/overview.html
-* Docs: https://hexdocs.pm/phoenix
-* Forum: https://elixirforum.com/c/phoenix-forum
-* Source: https://github.com/phoenixframework/phoenix
+1. Select your side (White or Black) from the home page
+2. Click "Add Moves" to build your repertoire
+3. Drag pieces on the board to add moves
+4. Navigate the tree by clicking on moves
+5. Click "Save All" to persist your changes
+6. Return to your repertoire and click "Review" to practice
