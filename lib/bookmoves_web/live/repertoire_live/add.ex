@@ -65,7 +65,9 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                     >
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex-1">
-                          <span class="font-mono text-base">{next_move_label(child, @side)}</span>
+                          <span class="font-mono text-base">
+                            {next_move_label(child, @current_move_index)}
+                          </span>
                         </div>
                         <div class="flex items-center gap-2">
                           <.button
@@ -126,32 +128,39 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       comment: ""
     }
 
-    existing_position = Repertoire.get_position_by_fen(new_fen, side)
-
-    case existing_position || Repertoire.create_position_if_not_exists(staged_move) do
+    case Repertoire.get_position_by_fen(new_fen, side) do
       %Repertoire.Position{} = position ->
-        move_notation = build_notation(position, side)
+        position_chain =
+          if position.parent_fen == socket.assigns.current_fen do
+            (socket.assigns.position_chain || []) ++ [position]
+          else
+            build_position_chain(position, side)
+          end
 
-        {:noreply,
-         socket
-         |> load_add_form(side, position.id)
-         |> assign(:move_notation, move_notation)}
+        {:noreply, apply_position_state(socket, side, position, position_chain)}
 
-      {:ok, %Repertoire.Position{} = position} ->
-        move_notation = build_notation(position, side)
+      nil ->
+        case Repertoire.create_position_if_not_exists(staged_move) do
+          {:ok, %Repertoire.Position{} = position} ->
+            position_chain =
+              if position.parent_fen == socket.assigns.current_fen do
+                (socket.assigns.position_chain || []) ++ [position]
+              else
+                build_position_chain(position, side)
+              end
 
-        {:noreply,
-         socket
-         |> put_flash(:info, "Move added successfully")
-         |> load_add_form(side, position.id)
-         |> assign(:move_notation, move_notation)}
+            {:noreply,
+             socket
+             |> put_flash(:info, "Move added successfully")
+             |> apply_position_state(side, position, position_chain)}
 
-      {:error, changeset} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "Failed to add move: #{inspect(changeset.errors)}")
-         |> assign(:current_fen, new_fen)
-         |> assign(:move_notation, socket.assigns.move_notation <> " " <> san)}
+          {:error, changeset} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, "Failed to add move: #{inspect(changeset.errors)}")
+             |> assign(:current_fen, new_fen)
+             |> assign(:move_notation, socket.assigns.move_notation <> " " <> san)}
+        end
     end
   end
 
@@ -160,18 +169,16 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     %{side: side} = socket.assigns
 
     current_pos = Repertoire.get_position_by_fen(fen, side)
-    move_notation = if current_pos, do: build_notation(current_pos, side), else: ""
 
     if current_pos do
-      {:noreply,
-       socket
-       |> load_add_form(side, current_pos.id)
-       |> assign(:move_notation, move_notation)}
+      position_chain = build_position_chain(current_pos, side)
+
+      {:noreply, apply_position_state(socket, side, current_pos, position_chain)}
     else
       {:noreply,
        socket
        |> assign(:current_fen, fen)
-       |> assign(:move_notation, move_notation)
+       |> assign(:move_notation, "")
        |> assign(:children, Repertoire.get_children(fen, side))}
     end
   end
@@ -185,7 +192,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     else
       parent_position = Repertoire.get_position_by_fen(parent_fen, side)
 
-      {:noreply, load_add_form(socket, side, parent_position && parent_position.id)}
+      {:noreply, load_add_form_from_position(socket, side, parent_position)}
     end
   end
 
@@ -206,39 +213,38 @@ defmodule BookmovesWeb.RepertoireLive.Add do
   end
 
   defp load_add_form(socket, side, position_id) do
-    {current_position, current_fen, parent_fen} =
-      if position_id do
-        pos = Repertoire.get_position!(position_id)
-        {pos, pos.fen, pos.parent_fen}
-      else
-        root = Repertoire.get_root(side)
-        {root, root.fen, nil}
-      end
+    position = if position_id, do: Repertoire.get_position!(position_id), else: nil
+    load_add_form_from_position(socket, side, position)
+  end
 
-    children = Repertoire.get_children(current_fen, side)
+  defp load_add_form_from_position(socket, side, position) do
+    current_position = if position, do: position, else: Repertoire.get_root(side)
+    position_chain = build_position_chain(current_position, side)
 
-    move_notation = if current_position, do: build_notation(current_position, side), else: ""
+    apply_position_state(socket, side, current_position, position_chain)
+  end
+
+  defp apply_position_state(socket, side, position, position_chain) do
+    children = Repertoire.get_children(position.fen, side)
+    moves = Enum.map(position_chain, & &1.san) |> Enum.reject(&is_nil/1)
+    move_notation = format_notation_with_numbers(moves)
+    current_move_index = length(moves)
 
     assign(socket,
       side: side,
-      current_position_id: position_id,
-      current_position: current_position,
-      current_fen: current_fen,
-      parent_fen: parent_fen,
+      current_position_id: position.id,
+      current_position: position,
+      current_fen: position.fen,
+      parent_fen: position.parent_fen,
       children: children,
+      position_chain: position_chain,
+      current_move_index: current_move_index,
       move_notation: move_notation
     )
   end
 
-  defp build_notation(%Repertoire.Position{} = position, side) do
-    position
-    |> move_list(side)
-    |> format_notation_with_numbers()
-  end
-
-  defp next_move_label(%Repertoire.Position{} = position, side) do
-    moves = move_list(position, side)
-    move_index = length(moves)
+  defp next_move_label(%Repertoire.Position{} = position, current_move_index) do
+    move_index = current_move_index + 1
     move_number = div(move_index + 1, 2)
 
     if rem(move_index, 2) == 1 do
@@ -261,22 +267,17 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     |> Enum.join(" ")
   end
 
-  defp build_notation_recursive(%Repertoire.Position{san: nil}, _side, acc) do
-    acc
-  end
+  defp build_position_chain(nil, _side), do: []
 
-  defp build_notation_recursive(%Repertoire.Position{} = position, side, acc) do
-    acc = if position.san, do: [position.san | acc], else: acc
-    parent = Repertoire.get_position_by_fen(position.parent_fen, side)
+  defp build_position_chain(%Repertoire.Position{} = position, side) do
+    parent_fen = position.parent_fen
 
-    if parent do
-      build_notation_recursive(parent, side, acc)
+    if is_nil(parent_fen) do
+      [position]
     else
-      acc
+      parent = Repertoire.get_position_by_fen(parent_fen, side)
+      chain = if parent, do: build_position_chain(parent, side), else: []
+      chain ++ [position]
     end
-  end
-
-  defp move_list(%Repertoire.Position{} = position, side) do
-    build_notation_recursive(position, side, [])
   end
 end
