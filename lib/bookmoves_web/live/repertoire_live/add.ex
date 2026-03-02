@@ -185,14 +185,21 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   @impl true
   def handle_event("rewind", _params, socket) do
-    %{parent_fen: parent_fen, side: side} = socket.assigns
+    %{parent_fen: parent_fen, side: side, position_chain: position_chain} = socket.assigns
 
-    if is_nil(parent_fen) do
-      {:noreply, socket}
-    else
-      parent_position = Repertoire.get_position_by_fen(parent_fen, side)
+    cond do
+      is_nil(parent_fen) ->
+        {:noreply, socket}
 
-      {:noreply, load_add_form_from_position(socket, side, parent_position)}
+      is_list(position_chain) and length(position_chain) > 1 ->
+        new_chain = Enum.drop(position_chain, -1)
+        position = List.last(new_chain)
+
+        {:noreply, apply_position_state(socket, side, position, new_chain)}
+
+      true ->
+        parent_position = Repertoire.get_position_by_fen(parent_fen, side)
+        {:noreply, load_add_form_from_position(socket, side, parent_position)}
     end
   end
 
