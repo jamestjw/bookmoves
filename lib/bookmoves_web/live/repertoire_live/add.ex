@@ -247,7 +247,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
   defp apply_position_state(socket, side, position, position_chain) do
     children = Repertoire.get_children(position.fen, side)
     moves = Enum.map(position_chain, & &1.san) |> Enum.reject(&is_nil/1)
-    move_notation = format_notation_with_numbers(moves)
+    move_notation = Repertoire.format_notation_with_numbers(moves)
     current_move_index = length(moves)
 
     assign(socket,
@@ -272,19 +272,6 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     else
       "#{move_number}... #{position.san}"
     end
-  end
-
-  defp format_notation_with_numbers(moves) do
-    Enum.reduce(moves, {1, [], :white}, fn
-      san, {move_num, acc, :white} ->
-        {move_num + 1, ["#{move_num}. #{san}" | acc], :black}
-
-      san, {move_num, acc, :black} ->
-        {move_num, [san | acc], :white}
-    end)
-    |> elem(1)
-    |> Enum.reverse()
-    |> Enum.join(" ")
   end
 
   defp build_position_chain(nil, _side), do: []

@@ -364,4 +364,21 @@ defmodule Bookmoves.Repertoire do
       end
     end)
   end
+
+  @doc """
+  Formats a list of SAN moves with move numbers.
+  """
+  @spec format_notation_with_numbers([String.t()]) :: String.t()
+  def format_notation_with_numbers(moves) do
+    Enum.reduce(moves, {1, [], :white}, fn
+      san, {move_num, acc, :white} ->
+        {move_num + 1, ["#{move_num}. #{san}" | acc], :black}
+
+      san, {move_num, acc, :black} ->
+        {move_num, [san | acc], :white}
+    end)
+    |> elem(1)
+    |> Enum.reverse()
+    |> Enum.join(" ")
+  end
 end

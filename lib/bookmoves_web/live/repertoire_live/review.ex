@@ -33,12 +33,17 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                 draggable={true}
               />
             </div>
+
+            <div class="mt-4">
+              <p class="text-sm opacity-70">
+                Current: <span class="font-mono">{@move_notation}</span>
+              </p>
+            </div>
           </div>
 
           <div>
             <div class="bg-base-200 rounded-xl p-4">
               <h3 class="font-semibold mb-2">Position</h3>
-              <p class="font-mono text-lg mb-4">{@move_notation}</p>
 
               <%= if @current_position.comment do %>
                 <div class="bg-base-300 rounded-lg p-3 mb-4">
@@ -213,8 +218,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
   defp build_notation(%Position{} = position, side) do
     build_notation_recursive(position, side, [])
-    |> Enum.reverse()
-    |> Enum.join(" ")
+    |> Repertoire.format_notation_with_numbers()
   end
 
   defp build_notation_recursive(%Position{san: nil}, _side, acc) do
