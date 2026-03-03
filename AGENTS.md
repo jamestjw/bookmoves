@@ -49,6 +49,7 @@ custom classes must fully style the input
 <!-- phoenix:elixir-start -->
 ## Elixir guidelines
 
+- **Always** add `@spec` type signatures for functions when possible, especially for public APIs
 - Elixir lists **do not support index based access via the access syntax**
 
   **Never do this (invalid)**:

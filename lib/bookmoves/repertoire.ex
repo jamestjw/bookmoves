@@ -8,9 +8,13 @@ defmodule Bookmoves.Repertoire do
 
   alias Bookmoves.Repertoire.Position
 
+  @type color_side :: String.t()
+  @type stats :: %{total: non_neg_integer(), due: non_neg_integer()}
+
   @doc """
   Returns the list of positions for a given color side.
   """
+  @spec list_positions(color_side() | nil) :: [Position.persisted_t()]
   def list_positions(color_side \\ nil) do
     query = from p in Position, order_by: [asc: p.next_review_at, asc: p.id]
 
@@ -27,6 +31,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Returns positions that are due for review.
   """
+  @spec list_due_positions(DateTime.t()) :: [Position.persisted_t()]
   def list_due_positions(now \\ DateTime.utc_now()) do
     Repo.all(
       from p in Position,
@@ -38,6 +43,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets positions due for review for a specific color side (user's turn).
   """
+  @spec list_due_positions_for_side(color_side(), DateTime.t()) :: [Position.persisted_t()]
   def list_due_positions_for_side(color_side, now \\ DateTime.utc_now())
       when color_side in ["white", "black"] do
     Repo.all(
@@ -50,6 +56,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets children of a position (moves in the repertoire from this position).
   """
+  @spec get_children(Position.persisted_t()) :: [Position.persisted_t()]
   def get_children(%Position{} = position) do
     Repo.all(
       from p in Position,
@@ -61,6 +68,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets children by fen and color side.
   """
+  @spec get_children(String.t(), String.t()) :: [Position.persisted_t()]
   def get_children(fen, color_side) when is_binary(fen) and is_binary(color_side) do
     Repo.all(
       from p in Position,
@@ -72,6 +80,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets the root position for a color side.
   """
+  @spec get_root(color_side()) :: Position.persisted_t() | nil
   def get_root(color_side) when color_side in ["white", "black"] do
     Repo.one(
       from p in Position,
@@ -82,6 +91,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets a position by fen and color side.
   """
+  @spec get_position_by_fen(String.t(), String.t()) :: Position.persisted_t() | nil
   def get_position_by_fen(fen, color_side) when is_binary(fen) and is_binary(color_side) do
     Repo.get_by(Position, fen: fen, color_side: color_side)
   end
@@ -89,11 +99,14 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets a single position.
   """
+  @spec get_position!(pos_integer()) :: Position.persisted_t()
   def get_position!(id), do: Repo.get!(Position, id)
 
   @doc """
   Creates a position.
   """
+  @spec create_position(Position.attrs()) ::
+          {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position(attrs) do
     %Position{}
     |> Position.changeset(attrs)
@@ -103,6 +116,8 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Creates a position or returns existing if fen + color_side already exists.
   """
+  @spec create_position_if_not_exists(Position.attrs()) ::
+          {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position_if_not_exists(attrs) do
     case get_position_by_fen(attrs[:fen], attrs[:color_side]) do
       nil ->
@@ -116,6 +131,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Fetches the position chain from root to current.
   """
+  @spec get_position_chain(String.t(), String.t()) :: [Position.persisted_t()]
   def get_position_chain(fen, color_side) when is_binary(fen) and is_binary(color_side) do
     chain_columns = [
       :id,
@@ -220,19 +236,25 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Creates multiple positions from a list of attribute maps.
   """
+  @spec create_positions([Position.attrs()]) ::
+          {:ok, map()}
+          | {:error, term(), Ecto.Changeset.t(), map()}
   def create_positions(attrs_list) do
-    positions =
-      Enum.map(attrs_list, fn attrs ->
-        %Position{}
-        |> Position.changeset(attrs)
+    multi =
+      attrs_list
+      |> Enum.with_index()
+      |> Enum.reduce(Ecto.Multi.new(), fn {attrs, index}, multi_acc ->
+        Ecto.Multi.insert(multi_acc, {:position, index}, Position.changeset(%Position{}, attrs))
       end)
 
-    Repo.insert_all(Position, positions, on_conflict: :nothing)
+    Repo.transact(multi)
   end
 
   @doc """
   Updates a position.
   """
+  @spec update_position(Position.persisted_t(), map()) ::
+          {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def update_position(%Position{} = position, attrs) do
     position
     |> Position.changeset(attrs)
@@ -242,6 +264,8 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Deletes a position.
   """
+  @spec delete_position(Position.persisted_t()) ::
+          {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def delete_position(%Position{} = position) do
     Repo.delete(position)
   end
@@ -249,6 +273,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Returns an `%Ecto.Changeset{}` for tracking position changes.
   """
+  @spec change_position(Position.t(), map()) :: Ecto.Changeset.t()
   def change_position(%Position{} = position, attrs \\ %{}) do
     Position.changeset(position, attrs)
   end
@@ -256,6 +281,8 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Reviews a position and updates its schedule based on correctness.
   """
+  @spec review_position(Position.persisted_t(), correct: boolean()) ::
+          {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def review_position(%Position{} = position, correct: true) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     reps = position.repetitions || 0
@@ -300,6 +327,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Returns stats for a color side.
   """
+  @spec get_stats(String.t()) :: stats()
   def get_stats(color_side) do
     total = Repo.one(from p in Position, where: p.color_side == ^color_side, select: count())
 
@@ -319,6 +347,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Seeds the root positions if they don't exist.
   """
+  @spec seed_root_positions() :: :ok
   def seed_root_positions do
     roots = [
       %{fen: Position.starting_fen(), color_side: "white", san: nil, parent_fen: nil},

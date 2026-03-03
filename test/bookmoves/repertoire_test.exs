@@ -38,4 +38,47 @@ defmodule Bookmoves.RepertoireTest do
       assert Enum.map(chain, & &1.san) == [nil, "e4", "e5", "Nf3"]
     end
   end
+
+  describe "positions" do
+    test "create_positions inserts all rows" do
+      root = white_root_fixture()
+
+      attrs_list = [
+        %{fen: "fen-bulk-1", san: "e4", parent_fen: root.fen, color_side: "white"},
+        %{fen: "fen-bulk-2", san: "d4", parent_fen: root.fen, color_side: "white"}
+      ]
+
+      assert {:ok, _} = Repertoire.create_positions(attrs_list)
+      assert Repertoire.get_position_by_fen("fen-bulk-1", "white")
+      assert Repertoire.get_position_by_fen("fen-bulk-2", "white")
+    end
+
+    test "create_positions rolls back on invalid attrs" do
+      root = white_root_fixture()
+
+      attrs_list = [
+        %{fen: "fen-bulk-3", san: "e4", parent_fen: root.fen, color_side: "white"},
+        %{fen: "fen-bulk-4", san: "d4", parent_fen: root.fen}
+      ]
+
+      assert {:error, _, _changeset, _} = Repertoire.create_positions(attrs_list)
+      refute Repertoire.get_position_by_fen("fen-bulk-3", "white")
+      refute Repertoire.get_position_by_fen("fen-bulk-4", "white")
+    end
+
+    test "update_position updates persisted fields" do
+      root = white_root_fixture()
+
+      {:ok, position} =
+        Repertoire.create_position(%{
+          fen: "fen-update-1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white"
+        })
+
+      assert {:ok, updated} = Repertoire.update_position(position, %{comment: "main line"})
+      assert updated.comment == "main line"
+    end
+  end
 end

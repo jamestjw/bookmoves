@@ -4,6 +4,52 @@ defmodule Bookmoves.Repertoire.Position do
 
   @starting_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
+  @type t :: %__MODULE__{
+          id: pos_integer() | nil,
+          fen: String.t() | nil,
+          san: String.t() | nil,
+          parent_fen: String.t() | nil,
+          comment: String.t() | nil,
+          color_side: String.t() | nil,
+          next_review_at: DateTime.t() | nil,
+          last_reviewed_at: DateTime.t() | nil,
+          interval_days: integer() | nil,
+          ease_factor: float() | nil,
+          repetitions: integer() | nil,
+          inserted_at: DateTime.t() | nil,
+          updated_at: DateTime.t() | nil
+        }
+
+  @type attrs :: %{
+          required(:fen) => String.t(),
+          required(:color_side) => String.t(),
+          optional(:san) => String.t() | nil,
+          optional(:parent_fen) => String.t() | nil,
+          optional(:comment) => String.t() | nil,
+          optional(:next_review_at) => DateTime.t() | nil,
+          optional(:last_reviewed_at) => DateTime.t() | nil,
+          optional(:interval_days) => integer() | nil,
+          optional(:ease_factor) => float() | nil,
+          optional(:repetitions) => integer() | nil
+        }
+
+  @type persisted_t :: %__MODULE__{
+          id: pos_integer(),
+          fen: String.t(),
+          san: String.t() | nil,
+          parent_fen: String.t() | nil,
+          comment: String.t() | nil,
+          color_side: String.t(),
+          next_review_at: DateTime.t() | nil,
+          last_reviewed_at: DateTime.t() | nil,
+          interval_days: integer() | nil,
+          ease_factor: float() | nil,
+          repetitions: integer() | nil,
+          inserted_at: DateTime.t() | nil,
+          updated_at: DateTime.t() | nil
+        }
+
+  @spec starting_fen() :: String.t()
   def starting_fen, do: @starting_fen
 
   schema "positions" do
@@ -22,6 +68,7 @@ defmodule Bookmoves.Repertoire.Position do
   end
 
   @doc false
+  @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(position, attrs) do
     position
     |> cast(attrs, [
