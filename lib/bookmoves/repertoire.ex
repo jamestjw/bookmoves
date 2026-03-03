@@ -46,11 +46,13 @@ defmodule Bookmoves.Repertoire do
   @spec list_due_positions_for_side(color_side(), DateTime.t()) :: [Position.persisted_t()]
   def list_due_positions_for_side(color_side, now \\ DateTime.utc_now())
       when color_side in ["white", "black"] do
-    Repo.all(
-      from p in Position,
-        where: p.next_review_at <= ^now and p.color_side == ^color_side,
-        order_by: [asc: p.next_review_at, asc: p.id]
+    from(p in Position,
+      where:
+        p.next_review_at <= ^now and p.color_side == ^color_side and not is_nil(p.parent_fen),
+      order_by: [asc: p.next_review_at, asc: p.id]
     )
+    |> Repo.all()
+    |> Enum.filter(&parent_side_to_move?(&1, color_side))
   end
 
   @doc """
@@ -363,6 +365,24 @@ defmodule Bookmoves.Repertoire do
           :ok
       end
     end)
+  end
+
+  defp parent_side_to_move?(%Position{parent_fen: parent_fen}, color_side)
+       when is_binary(parent_fen) do
+    side_to_move_from_fen(parent_fen) == color_side
+  end
+
+  defp side_to_move_from_fen(fen) when is_binary(fen) do
+    case String.split(fen, " ", parts: 3) do
+      [_board, "w" | _rest] ->
+        "white"
+
+      [_board, "b" | _rest] ->
+        "black"
+
+      _ ->
+        raise ArgumentError, "invalid FEN: expected side-to-move token in '#{fen}'"
+    end
   end
 
   @doc """

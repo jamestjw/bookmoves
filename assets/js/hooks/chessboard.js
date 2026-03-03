@@ -89,6 +89,25 @@ export const ChessboardHook = {
       this.chess.load(resetFen);
       this.board.setPosition(resetFen);
     });
+
+    this.handleEvent("board-auto-move", ({ san, fen: targetFen, delay }) => {
+      if (!san || !this.board) return;
+
+      const wait = typeof delay === "number" ? delay : 200;
+
+      setTimeout(() => {
+        try {
+          const move = this.chess.move(san);
+          if (!move) return;
+
+          const newFen = targetFen || this.chess.fen();
+          this.currentFen = newFen;
+          this.board.setPosition(newFen, true);
+        } catch (e) {
+          // Ignore errors
+        }
+      }, wait);
+    });
   },
 
   destroyBoard() {

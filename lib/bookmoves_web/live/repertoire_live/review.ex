@@ -48,7 +48,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               <% end %>
 
               <div class="mt-4">
-                <p class="text-sm opacity-70">Find all correct moves for this position.</p>
+                <p class="text-sm opacity-70">Play all correct moves for this position.</p>
               </div>
 
               <%= if @show_result and @last_result == :duplicate do %>
@@ -63,15 +63,9 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                 </div>
               <% end %>
 
-              <%= if @show_result and @last_result == :correct and not @all_found do %>
+              <%= if @show_result and @last_result == :correct and not @all_found and length(@due_targets) > 1 do %>
                 <div class="alert alert-info mt-4">
                   <span>Good move. Keep going—there are more correct moves.</span>
-                </div>
-              <% end %>
-
-              <%= if @all_found do %>
-                <div class="alert alert-success mt-4">
-                  <span>All moves found. Moving to the next position.</span>
                 </div>
               <% end %>
 
@@ -106,57 +100,61 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
   @impl true
   def handle_event("board-move", %{"san" => san}, socket) when is_binary(san) do
-    %{
-      current_position: _position,
-      side: _side,
-      correct_moves: correct_moves,
-      found_moves: found_moves,
-      attempted_incorrect: attempted_incorrect
-    } = socket.assigns
+    case socket.assigns do
+      %{current_position: %Position{} = parent_position, due_targets: due_targets} ->
+        found_targets = socket.assigns.found_targets
+        attempted_incorrect = socket.assigns.attempted_incorrect
 
-    sanitized_move = String.upcase(san)
+        sanitized_move = String.upcase(san)
 
-    cond do
-      sanitized_move in found_moves ->
-        socket =
-          assign(socket,
-            show_result: true,
-            last_result: :duplicate
-          )
+        target_sans = Enum.map(due_targets, &String.upcase(&1.san || ""))
 
-        {:noreply, socket}
+        cond do
+          sanitized_move in found_targets ->
+            socket =
+              socket
+              |> assign(
+                show_result: true,
+                last_result: :duplicate
+              )
 
-      sanitized_move in correct_moves ->
-        new_found_moves = [sanitized_move | found_moves]
-        all_found = length(new_found_moves) == length(correct_moves)
+            {:noreply, socket}
 
-        socket =
-          assign(socket,
-            found_moves: new_found_moves,
-            all_found: all_found,
-            show_result: true,
-            last_result: :correct
-          )
+          sanitized_move in target_sans ->
+            new_found = [sanitized_move | found_targets]
+            all_found = length(new_found) == length(target_sans)
 
-        if all_found do
-          finish_review(socket, correct: not attempted_incorrect)
-        else
-          socket =
-            push_event(socket, "board-reset", %{fen: socket.assigns.current_position.fen})
+            socket =
+              assign(socket,
+                found_targets: new_found,
+                all_found: all_found,
+                show_result: true,
+                last_result: :correct
+              )
 
-          {:noreply, socket}
+            if all_found do
+              advance_after_complete(socket, parent_position, attempted_incorrect)
+            else
+              socket =
+                push_event(socket, "board-reset", %{fen: socket.assigns.current_position.fen})
+
+              {:noreply, socket}
+            end
+
+          true ->
+            socket =
+              socket
+              |> assign(
+                show_result: true,
+                last_result: :incorrect,
+                attempted_incorrect: true
+              )
+              |> push_event("board-reset", %{fen: socket.assigns.current_position.fen})
+
+            {:noreply, socket}
         end
 
-      true ->
-        socket =
-          socket
-          |> assign(
-            show_result: true,
-            last_result: :incorrect,
-            attempted_incorrect: true
-          )
-          |> push_event("board-reset", %{fen: socket.assigns.current_position.fen})
-
+      _ ->
         {:noreply, socket}
     end
   end
@@ -168,59 +166,159 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
   @impl true
   def handle_event("skip", _params, socket) do
-    finish_review(socket, correct: false)
+    %{side: side} = socket.assigns
+
+    case socket.assigns do
+      %{current_position: %Position{}, due_targets: due_targets} when due_targets != [] ->
+        case score_targets(due_targets, false) do
+          :ok ->
+            {:noreply, start_review(socket, side)}
+
+          {:error, _changeset} ->
+            abort_review(socket, side, "Unable to record review result. Please try again.")
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   defp start_review(socket, side) do
     due_positions = Repertoire.list_due_positions_for_side(side)
 
-    if length(due_positions) > 0 do
-      [current | _] = due_positions
-      correct_moves = Repertoire.get_children(current) |> Enum.map(&(&1.san |> String.upcase()))
+    case build_due_batch(due_positions, side) do
+      {:ok, parent, targets} ->
+        assign(socket,
+          side: side,
+          due_positions: due_positions,
+          current_position: parent,
+          due_targets: targets,
+          found_targets: [],
+          all_found: targets == [],
+          show_result: false,
+          last_result: nil,
+          attempted_incorrect: false,
+          move_notation: build_notation(parent, side)
+        )
 
-      assign(socket,
-        side: side,
-        due_positions: due_positions,
-        current_position: current,
-        correct_moves: correct_moves,
-        found_moves: [],
-        all_found: false,
-        show_result: false,
-        last_result: nil,
-        attempted_incorrect: false,
-        move_notation: build_notation(current, side)
-      )
-    else
-      assign(socket,
-        side: side,
-        due_positions: [],
-        current_position: nil,
-        correct_moves: [],
-        found_moves: [],
-        all_found: false,
-        show_result: false,
-        last_result: nil,
-        attempted_incorrect: false,
-        move_notation: ""
-      )
-    end
-  end
-
-  defp finish_review(socket, correct: correct) do
-    %{current_position: position, side: side} = socket.assigns
-
-    case Repertoire.review_position(position, correct: correct) do
-      {:ok, _} ->
-        {:noreply, start_review(socket, side)}
-
-      {:error, _} ->
-        {:noreply, socket}
+      :none ->
+        assign(socket,
+          side: side,
+          due_positions: [],
+          current_position: nil,
+          due_targets: [],
+          found_targets: [],
+          all_found: false,
+          show_result: false,
+          last_result: nil,
+          attempted_incorrect: false,
+          move_notation: ""
+        )
     end
   end
 
   defp build_notation(%Position{} = position, side) do
     build_notation_recursive(position, side, [])
     |> Repertoire.format_notation_with_numbers()
+  end
+
+  defp advance_after_complete(socket, %Position{} = _parent_position, attempted_incorrect) do
+    %{side: side, due_targets: due_targets} = socket.assigns
+    correct = not attempted_incorrect
+
+    case score_targets(due_targets, correct) do
+      :ok ->
+        now = DateTime.utc_now()
+
+        next_user_move =
+          Enum.find(due_targets, fn target ->
+            target.next_review_at && DateTime.compare(target.next_review_at, now) != :gt
+          end) || List.first(due_targets)
+
+        if next_user_move do
+          # TODO: Use existing due_positions to select next batch of due targets.
+          #       Current logic can surface non-due moves after auto-reply.
+          {next_position, opponent_san} = auto_reply(next_user_move)
+          next_children = Repertoire.get_children(next_position)
+
+          socket =
+            assign(socket,
+              current_position: next_position,
+              due_targets: next_children,
+              found_targets: [],
+              all_found: next_children == [],
+              show_result: next_children != [],
+              last_result: :correct,
+              move_notation: build_notation(next_position, side)
+            )
+
+          socket =
+            if opponent_san do
+              push_event(socket, "board-auto-move", %{
+                san: opponent_san,
+                fen: next_position.fen,
+                delay: 200
+              })
+            else
+              socket
+            end
+
+          if next_children == [] do
+            {:noreply, start_review(socket, side)}
+          else
+            {:noreply, socket}
+          end
+        else
+          {:noreply, start_review(socket, side)}
+        end
+
+      {:error, _changeset} ->
+        abort_review(socket, side, "Unable to record review result. Please try again.")
+    end
+  end
+
+  defp build_due_batch(due_positions, side) do
+    due_positions
+    |> Enum.group_by(& &1.parent_fen)
+    |> Enum.find_value(:none, fn
+      {nil, _targets} ->
+        nil
+
+      {parent_fen, targets} ->
+        case Repertoire.get_position_by_fen(parent_fen, side) do
+          %Position{} = parent ->
+            {:ok, parent, targets}
+
+          _ ->
+            nil
+        end
+    end)
+  end
+
+  defp score_targets(targets, correct) do
+    Enum.reduce_while(targets, :ok, fn target, _acc ->
+      case Repertoire.review_position(target, correct: correct) do
+        {:ok, _} -> {:cont, :ok}
+        {:error, changeset} -> {:halt, {:error, changeset}}
+      end
+    end)
+  end
+
+  defp abort_review(socket, side, message) do
+    {:noreply,
+     socket
+     |> put_flash(:error, message)
+     |> push_navigate(to: ~p"/repertoire/#{side}")}
+  end
+
+  defp auto_reply(%Position{} = user_move) do
+    case Repertoire.get_children(user_move) do
+      [] ->
+        {user_move, nil}
+
+      [opponent_move | _] ->
+        {opponent_move, opponent_move.san}
+    end
   end
 
   defp build_notation_recursive(%Position{san: nil}, _side, acc) do

@@ -81,4 +81,32 @@ defmodule Bookmoves.RepertoireTest do
       assert updated.comment == "main line"
     end
   end
+
+  describe "due positions" do
+    test "list_due_positions_for_side returns only positions for the side to move" do
+      now = DateTime.utc_now()
+
+      white_to_move = white_root_fixture()
+
+      {:ok, _} =
+        Repertoire.update_position(white_to_move, %{
+          next_review_at: DateTime.add(now, -60, :second)
+        })
+
+      {:ok, _black_to_move} =
+        Repertoire.create_position(%{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: white_to_move.fen,
+          color_side: "white",
+          next_review_at: DateTime.add(now, -60, :second)
+        })
+
+      due = Repertoire.list_due_positions_for_side("white", now)
+
+      assert Enum.map(due, & &1.fen) == [
+               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+             ]
+    end
+  end
 end
