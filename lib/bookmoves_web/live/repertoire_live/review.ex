@@ -37,21 +37,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               </div>
             </div>
 
-            <div class="mt-4">
-              <p class="text-sm opacity-70">
-                Current: <span class="font-mono">{@move_notation}</span>
-              </p>
-              <%= if @move_notation != "" do %>
-                <.link
-                  href={lichess_analysis_url(@move_notation)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="mt-3 inline-flex items-center gap-2 text-sm text-primary hover:underline"
-                >
-                  <.icon name="hero-arrow-top-right-on-square" class="size-4" /> Analyze on Lichess
-                </.link>
-              <% end %>
-            </div>
+            <.current_moves move_notation={@move_notation} />
           </div>
 
           <div>
@@ -232,11 +218,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   defp build_notation(%Position{} = position, side) do
     build_notation_recursive(position, side, [])
     |> Repertoire.format_notation_with_numbers()
-  end
-
-  defp lichess_analysis_url(move_notation) when is_binary(move_notation) do
-    encoded_pgn = URI.encode(move_notation)
-    "https://lichess.org/analysis/pgn/#{encoded_pgn}"
   end
 
   defp build_notation_recursive(%Position{san: nil}, _side, acc) do

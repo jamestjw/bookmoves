@@ -39,14 +39,10 @@ defmodule BookmovesWeb.RepertoireLive.Add do
             </div>
           </div>
 
-          <div class="mt-4">
-            <p class="text-sm opacity-70">
-              Current: <span class="font-mono">{@move_notation}</span>
-            </p>
-            <p class="text-xs opacity-50 mt-1">
-              Drag pieces to add moves. Click a move to navigate.
-            </p>
-          </div>
+          <.current_moves move_notation={@move_notation} />
+          <p class="text-xs opacity-50 mt-1">
+            Drag pieces to add moves. Click a move to navigate.
+          </p>
         </div>
 
         <div class="lg:col-span-1">
