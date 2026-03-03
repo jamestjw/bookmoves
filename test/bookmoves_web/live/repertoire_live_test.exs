@@ -34,6 +34,55 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "No positions due for review!"
     end
 
+    test "shows current move list under the board", %{conn: conn} do
+      root = white_root_fixture()
+      future = DateTime.add(DateTime.utc_now(), 3600, :second)
+
+      {:ok, _} = Repertoire.update_position(root, %{next_review_at: future})
+
+      {:ok, pos1} =
+        Repertoire.create_position(%{
+          fen: "fen-review-chain-1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: future
+        })
+
+      {:ok, pos2} =
+        Repertoire.create_position(%{
+          fen: "fen-review-chain-2",
+          san: "e5",
+          parent_fen: pos1.fen,
+          color_side: "white",
+          next_review_at: future
+        })
+
+      {:ok, pos3} =
+        Repertoire.create_position(%{
+          fen: "fen-review-chain-3",
+          san: "Nf3",
+          parent_fen: pos2.fen,
+          color_side: "white",
+          next_review_at: future
+        })
+
+      {:ok, _pos4} =
+        Repertoire.create_position(%{
+          fen: "fen-review-chain-4",
+          san: "Nc6",
+          parent_fen: pos3.fen,
+          color_side: "white",
+          next_review_at: DateTime.add(DateTime.utc_now(), -60, :second)
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+
+      html = render(view)
+      assert html =~ "Current:"
+      assert html =~ "1. e4 e5 2. Nf3"
+    end
+
     test "warns when a move is repeated", %{conn: conn} do
       root = white_root_fixture()
 
