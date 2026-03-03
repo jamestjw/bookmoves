@@ -8,7 +8,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} container_class="mx-auto w-full max-w-[1000px] space-y-4">
       <.header>
         Review {@side |> String.upcase()}
         <:subtitle>Play the moves from your repertoire.</:subtitle>
@@ -23,15 +23,18 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       </.header>
 
       <%= if @current_position do %>
-        <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <div>
-            <div class="bg-base-200 rounded-xl p-4">
-              <.chessboard
-                id="review-board"
-                fen={@current_position.fen}
-                orientation={@side}
-                draggable={true}
-              />
+            <div class="bg-base-200 rounded-xl p-4 flex justify-center">
+              <div style="width: min(100%, 720px); height: min(100%, 720px);">
+                <.chessboard
+                  id="review-board"
+                  fen={@current_position.fen}
+                  orientation={@side}
+                  draggable={true}
+                  class="w-full h-full"
+                />
+              </div>
             </div>
 
             <div class="mt-4">
