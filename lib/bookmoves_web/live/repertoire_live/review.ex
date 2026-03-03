@@ -27,7 +27,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                 fen={@current_position.fen}
                 orientation={@side}
                 draggable={true}
-                interactive={true}
               />
             </div>
           </div>
