@@ -29,7 +29,7 @@ defmodule BookmovesWeb.ChessComponents do
     ~H"""
     <div class="mt-4">
       <p class="text-sm opacity-70">
-        Current: <span class="font-mono">{@move_notation}</span>
+        Current: <span class="font-medium">{@move_notation}</span>
       </p>
       <%= if @move_notation != "" do %>
         <.link
