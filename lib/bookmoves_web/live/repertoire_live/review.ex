@@ -16,9 +16,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           <.button navigate={~p"/repertoire/#{@side}"}>
             <.icon name="hero-arrow-left" /> Back
           </.button>
-          <.button phx-click="skip" class="btn-ghost">
-            Skip
-          </.button>
         </:actions>
       </.header>
 
@@ -77,6 +74,12 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                   <span>All moves found. Moving to the next position.</span>
                 </div>
               <% end %>
+
+              <div class="mt-4">
+                <.button phx-click="skip" class="btn btn-primary w-full hover:brightness-110">
+                  Skip
+                </.button>
+              </div>
             </div>
           </div>
         </div>
