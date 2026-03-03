@@ -47,18 +47,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               <% end %>
 
               <div class="mt-4">
-                <p class="text-sm opacity-70 mb-2">Correct moves in repertoire:</p>
-                <div class="flex flex-wrap gap-2">
-                  <span
-                    :for={move <- @correct_moves}
-                    class={[
-                      "badge badge-lg",
-                      if(move in @found_moves, do: "badge-success", else: "badge-neutral")
-                    ]}
-                  >
-                    {move}
-                  </span>
-                </div>
+                <p class="text-sm opacity-70">Find all correct moves for this position.</p>
               </div>
 
               <%= if @show_result and @last_result == :duplicate do %>
