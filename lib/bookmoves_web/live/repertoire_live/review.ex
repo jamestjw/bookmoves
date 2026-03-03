@@ -67,6 +67,18 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                 </div>
               <% end %>
 
+              <%= if @show_result and @last_result == :incorrect do %>
+                <div class="alert alert-error mt-4">
+                  <span>Incorrect move. Try again.</span>
+                </div>
+              <% end %>
+
+              <%= if @show_result and @last_result == :correct and not @all_found do %>
+                <div class="alert alert-info mt-4">
+                  <span>Good move. Keep going—there are more correct moves.</span>
+                </div>
+              <% end %>
+
               <%= if @all_found do %>
                 <div class="alert alert-success mt-4">
                   <span>All moves found. Moving to the next position.</span>
@@ -133,16 +145,21 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         if all_found do
           finish_review(socket, correct: not attempted_incorrect)
         else
+          socket =
+            push_event(socket, "board-reset", %{fen: socket.assigns.current_position.fen})
+
           {:noreply, socket}
         end
 
       true ->
         socket =
-          assign(socket,
+          socket
+          |> assign(
             show_result: true,
             last_result: :incorrect,
             attempted_incorrect: true
           )
+          |> push_event("board-reset", %{fen: socket.assigns.current_position.fen})
 
         {:noreply, socket}
     end

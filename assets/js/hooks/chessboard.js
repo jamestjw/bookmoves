@@ -81,6 +81,14 @@ export const ChessboardHook = {
         return true;
       }, turnColor);
     }
+
+    this.handleEvent("board-reset", ({ fen: resetFen }) => {
+      if (!resetFen || !this.board) return;
+
+      this.currentFen = resetFen;
+      this.chess.load(resetFen);
+      this.board.setPosition(resetFen);
+    });
   },
 
   destroyBoard() {

@@ -71,6 +71,69 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "That move is already found. Try a different correct move."
     end
 
+    test "prompts when more correct moves remain", %{conn: conn} do
+      root = white_root_fixture()
+
+      {:ok, _} =
+        Repertoire.update_position(root, %{
+          next_review_at: DateTime.add(DateTime.utc_now(), -60, :second)
+        })
+
+      future = DateTime.add(DateTime.utc_now(), 3600, :second)
+
+      _child =
+        position_fixture(%{
+          fen: "fen-review-6",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: future
+        })
+
+      _child_two =
+        position_fixture(%{
+          fen: "fen-review-7",
+          san: "d4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: future
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+
+      render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
+
+      html = render(view)
+      assert html =~ "Good move. Keep going—there are more correct moves."
+    end
+
+    test "shows an error for incorrect moves", %{conn: conn} do
+      root = white_root_fixture()
+
+      {:ok, _} =
+        Repertoire.update_position(root, %{
+          next_review_at: DateTime.add(DateTime.utc_now(), -60, :second)
+        })
+
+      future = DateTime.add(DateTime.utc_now(), 3600, :second)
+
+      _child =
+        position_fixture(%{
+          fen: "fen-review-5",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: future
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+
+      render_hook(view, "board-move", %{"san" => "d4", "move" => "d2d4"})
+
+      html = render(view)
+      assert html =~ "Incorrect move. Try again."
+    end
+
     test "skip moves on and scores as incorrect", %{conn: conn} do
       root = white_root_fixture()
       starting_ease = root.ease_factor
