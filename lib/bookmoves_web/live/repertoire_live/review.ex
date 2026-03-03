@@ -3,6 +3,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
   alias Bookmoves.Repertoire
   alias Bookmoves.Repertoire.Position
+  require Logger
 
   @impl true
   def render(assigns) do
@@ -14,6 +15,9 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         <:actions>
           <.button navigate={~p"/repertoire/#{@side}"}>
             <.icon name="hero-arrow-left" /> Back
+          </.button>
+          <.button phx-click="skip" class="btn-ghost">
+            Skip
           </.button>
         </:actions>
       </.header>
@@ -57,21 +61,15 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                 </div>
               </div>
 
-              <%= if @all_found do %>
-                <div class="alert alert-success mt-4">
-                  <span>All moves found. Great job!</span>
+              <%= if @show_result and @last_result == :duplicate do %>
+                <div class="alert alert-warning mt-4">
+                  <span>That move is already found. Try a different correct move.</span>
                 </div>
               <% end %>
 
-              <%= if @show_result do %>
-                <div class="mt-4">
-                  <.button
-                    phx-click="continue"
-                    variant="primary"
-                    class="w-full"
-                  >
-                    Continue
-                  </.button>
+              <%= if @all_found do %>
+                <div class="alert alert-success mt-4">
+                  <span>All moves found. Moving to the next position.</span>
                 </div>
               <% end %>
             </div>
@@ -99,59 +97,65 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   @impl true
-  def handle_event("board-move", %{"move" => move}, socket) do
+  def handle_event("board-move", %{"san" => san}, socket) when is_binary(san) do
     %{
       current_position: _position,
       side: _side,
       correct_moves: correct_moves,
-      found_moves: found_moves
+      found_moves: found_moves,
+      attempted_incorrect: attempted_incorrect
     } = socket.assigns
 
-    sanitized_move = String.upcase(move)
+    sanitized_move = String.upcase(san)
 
-    if sanitized_move in correct_moves and sanitized_move not in found_moves do
-      new_found_moves = [sanitized_move | found_moves]
-      all_found = length(new_found_moves) == length(correct_moves)
+    cond do
+      sanitized_move in found_moves ->
+        socket =
+          assign(socket,
+            show_result: true,
+            last_result: :duplicate
+          )
 
-      socket =
-        assign(socket,
-          found_moves: new_found_moves,
-          all_found: all_found,
-          show_result: true,
-          last_result: :correct
-        )
+        {:noreply, socket}
 
-      {:noreply, socket}
-    else
-      socket =
-        assign(socket,
-          show_result: true,
-          last_result: :incorrect
-        )
+      sanitized_move in correct_moves ->
+        new_found_moves = [sanitized_move | found_moves]
+        all_found = length(new_found_moves) == length(correct_moves)
 
-      {:noreply, socket}
+        socket =
+          assign(socket,
+            found_moves: new_found_moves,
+            all_found: all_found,
+            show_result: true,
+            last_result: :correct
+          )
+
+        if all_found do
+          finish_review(socket, correct: not attempted_incorrect)
+        else
+          {:noreply, socket}
+        end
+
+      true ->
+        socket =
+          assign(socket,
+            show_result: true,
+            last_result: :incorrect,
+            attempted_incorrect: true
+          )
+
+        {:noreply, socket}
     end
   end
 
+  def handle_event("board-move", params, socket) do
+    Logger.warning("Review board-move missing SAN payload params=#{inspect(params)}")
+    {:noreply, socket}
+  end
+
   @impl true
-  def handle_event("continue", _params, socket) do
-    %{
-      current_position: position,
-      side: side,
-      last_result: last_result,
-      found_moves: _found_moves,
-      all_found: all_found
-    } = socket.assigns
-
-    correct = last_result == :correct and all_found
-
-    case Repertoire.review_position(position, correct: correct) do
-      {:ok, _} ->
-        {:noreply, start_review(socket, side)}
-
-      {:error, _} ->
-        {:noreply, socket}
-    end
+  def handle_event("skip", _params, socket) do
+    finish_review(socket, correct: false)
   end
 
   defp start_review(socket, side) do
@@ -170,6 +174,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         all_found: false,
         show_result: false,
         last_result: nil,
+        attempted_incorrect: false,
         move_notation: build_notation(current, side)
       )
     else
@@ -182,8 +187,21 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         all_found: false,
         show_result: false,
         last_result: nil,
+        attempted_incorrect: false,
         move_notation: ""
       )
+    end
+  end
+
+  defp finish_review(socket, correct: correct) do
+    %{current_position: position, side: side} = socket.assigns
+
+    case Repertoire.review_position(position, correct: correct) do
+      {:ok, _} ->
+        {:noreply, start_review(socket, side)}
+
+      {:error, _} ->
+        {:noreply, socket}
     end
   end
 

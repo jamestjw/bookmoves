@@ -1,5 +1,5 @@
 defmodule Bookmoves.RepertoireTest do
-  use Bookmoves.DataCase, async: true
+  use Bookmoves.DataCase, async: false
 
   alias Bookmoves.Repertoire
   import Bookmoves.RepertoireFixtures
