@@ -8,7 +8,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} container_class="mx-auto w-full max-w-[1000px] space-y-4">
+    <Layouts.app
+      flash={@flash}
+      container_class="mx-auto w-full max-w-[1000px] space-y-4"
+      main_class="px-4 py-6 sm:px-6 lg:px-8"
+    >
       <.header>
         Review {@side |> String.upcase()}
         <:subtitle>Play the moves from your repertoire.</:subtitle>

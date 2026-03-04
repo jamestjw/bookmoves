@@ -28,19 +28,20 @@ defmodule BookmovesWeb.ChessComponents do
   def current_moves(assigns) do
     ~H"""
     <div class="mt-4">
-      <p class="text-sm opacity-70">
-        Current: <span class="font-medium">{@move_notation}</span>
+      <p class="text-sm opacity-70 flex flex-wrap items-center gap-2">
+        <span>Current:</span>
+        <span class="font-medium">{@move_notation}</span>
+        <%= if @move_notation != "" do %>
+          <.link
+            href={lichess_analysis_url(@move_notation)}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+          >
+            <.icon name="hero-arrow-top-right-on-square" class="size-4" /> Analyze on Lichess
+          </.link>
+        <% end %>
       </p>
-      <%= if @move_notation != "" do %>
-        <.link
-          href={lichess_analysis_url(@move_notation)}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="mt-3 inline-flex items-center gap-2 text-sm text-primary hover:underline"
-        >
-          <.icon name="hero-arrow-top-right-on-square" class="size-4" /> Analyze on Lichess
-        </.link>
-      <% end %>
     </div>
     """
   end

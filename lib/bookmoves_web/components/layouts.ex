@@ -34,10 +34,11 @@ defmodule BookmovesWeb.Layouts do
   slot :inner_block, required: true
   attr :container_class, :string, default: "mx-auto max-w-2xl space-y-4"
   attr :show_header, :boolean, default: true
+  attr :main_class, :string, default: "px-4 py-20 sm:px-6 lg:px-8"
 
   def app(assigns) do
     ~H"""
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
+    <main class={@main_class}>
       <div class={@container_class}>
         {render_slot(@inner_block)}
       </div>

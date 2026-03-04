@@ -50,38 +50,78 @@ defmodule BookmovesWeb.RepertoireLive.Add do
             <h3 class="font-semibold mb-4">Possible Moves</h3>
 
             <div id="possible-moves" class="overflow-x-auto">
-              <%= if @children != [] do %>
-                <div class="text-sm space-y-2">
-                  <%= for child <- @children do %>
-                    <div
-                      class="bg-base-100 rounded-lg p-3 hover:bg-base-200 transition-colors cursor-pointer"
-                      id={"possible-move-#{child.id}"}
-                      phx-click="navigate"
-                      phx-value-fen={child.fen}
-                    >
-                      <div class="flex items-center justify-between gap-3">
-                        <div class="flex-1">
-                          <span class="font-mono text-base">
-                            {next_move_label(child, @current_move_index)}
-                          </span>
+              <%= if @editing_comment_id do %>
+                <div class="bg-base-100 rounded-lg p-4">
+                  <h4 class="font-semibold mb-2">Edit Comment</h4>
+                  <.form for={@comment_form} id="comment-form" phx-submit="save-comment">
+                    <input type="hidden" name="comment[id]" value={@editing_comment_id} />
+                    <.input
+                      field={@comment_form[:body]}
+                      type="textarea"
+                      placeholder="Add a comment"
+                      class="w-full text-sm min-h-32 px-3 py-2"
+                    />
+                    <div class="mt-3 flex gap-4">
+                      <.button class="btn-ghost btn-xs text-[0.7rem] text-base-content/70 bg-base-100 hover:bg-base-200 hover:brightness-150">
+                        Save
+                      </.button>
+                      <.button
+                        class="btn-ghost btn-xs text-[0.7rem] text-base-content/70 bg-base-100 hover:bg-base-200 hover:brightness-150"
+                        phx-click="cancel-comment"
+                        type="button"
+                      >
+                        Cancel
+                      </.button>
+                    </div>
+                  </.form>
+                </div>
+              <% else %>
+                <%= if @children != [] do %>
+                  <div class="text-sm space-y-2">
+                    <%= for child <- @children do %>
+                      <div
+                        class="bg-base-100 rounded-lg p-3 hover:shadow-sm transition cursor-pointer"
+                        id={"possible-move-#{child.id}"}
+                        phx-click="navigate"
+                        phx-value-fen={child.fen}
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="flex-1">
+                            <span class="font-mono text-base">
+                              {next_move_label(child, @current_move_index)}
+                            </span>
+                            <%= if child.comment do %>
+                              <div class="mt-1">
+                                <p class="text-xs opacity-70">{child.comment}</p>
+                              </div>
+                            <% end %>
+                          </div>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="mt-3 flex items-center gap-4">
                           <.button
-                            class="btn-error btn-sm"
+                            class="btn-ghost btn-xs text-[0.7rem] text-base-content/70 bg-base-100 hover:bg-base-200 hover:brightness-150"
+                            phx-click="edit-comment"
+                            phx-value-id={child.id}
+                            phx-stop-propagation
+                          >
+                            <.icon name="hero-pencil-square" class="w-4 h-4" /> Edit comment
+                          </.button>
+                          <.button
+                            class="btn-ghost btn-xs text-[0.7rem] text-base-content/70 bg-base-100 hover:bg-base-200 hover:brightness-150 hover:scale-[1.02] transition"
                             phx-click="delete"
                             phx-value-id={child.id}
                             phx-stop-propagation
                             id={"delete-move-#{child.id}"}
                           >
-                            Delete
+                            <.icon name="hero-trash" class="w-3.5 h-3.5" /> Delete
                           </.button>
                         </div>
                       </div>
-                    </div>
-                  <% end %>
-                </div>
-              <% else %>
-                <p class="opacity-70">No moves added yet. Drag pieces to add moves.</p>
+                    <% end %>
+                  </div>
+                <% else %>
+                  <p class="opacity-70">No moves added yet. Drag pieces to add moves.</p>
+                <% end %>
               <% end %>
             </div>
             <div class="mt-4 flex justify-end">
@@ -213,6 +253,39 @@ defmodule BookmovesWeb.RepertoireLive.Add do
   end
 
   @impl true
+  def handle_event("save-comment", %{"comment" => %{"id" => id, "body" => body}}, socket) do
+    position = Repertoire.get_position!(id)
+
+    case Repertoire.update_position(position, %{comment: String.trim(body)}) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> load_add_form_from_position(socket.assigns.side, socket.assigns.current_position)
+         |> assign(:editing_comment_id, nil)}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Unable to save comment")}
+    end
+  end
+
+  @impl true
+  def handle_event("edit-comment", %{"id" => id}, socket) do
+    position = Repertoire.get_position!(id)
+
+    {:noreply,
+     assign(socket,
+       editing_comment_id: position.id,
+       comment_form:
+         to_form(%{"id" => position.id, "body" => position.comment || ""}, as: :comment)
+     )}
+  end
+
+  @impl true
+  def handle_event("cancel-comment", _params, socket) do
+    {:noreply, assign(socket, editing_comment_id: nil)}
+  end
+
+  @impl true
   def handle_event("advance", _params, socket) do
     %{side: side, children: children, position_chain: position_chain} = socket.assigns
 
@@ -274,7 +347,9 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       children: children,
       position_chain: position_chain,
       current_move_index: current_move_index,
-      move_notation: move_notation
+      move_notation: move_notation,
+      comment_form: to_form(%{}, as: :comment),
+      editing_comment_id: nil
     )
   end
 
