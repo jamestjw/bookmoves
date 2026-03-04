@@ -260,6 +260,18 @@ defmodule Bookmoves.Repertoire do
   end
 
   @doc """
+  Updates a position comment without loading the record.
+  """
+  @spec update_position_comment(pos_integer(), String.t()) :: :ok | :error
+  def update_position_comment(id, comment) when is_integer(id) do
+    {count, _} =
+      from(p in Position, where: p.id == ^id)
+      |> Repo.update_all(set: [comment: comment])
+
+    if count == 1, do: :ok, else: :error
+  end
+
+  @doc """
   Deletes a position.
   """
   @spec delete_position(Position.persisted_t()) ::

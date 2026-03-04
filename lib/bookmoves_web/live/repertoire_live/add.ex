@@ -254,23 +254,28 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   @impl true
   def handle_event("save-comment", %{"comment" => %{"id" => id, "body" => body}}, socket) do
-    position = Repertoire.get_position!(id)
+    position_id = String.to_integer(id)
+    trimmed_body = String.trim(body)
 
-    case Repertoire.update_position(position, %{comment: String.trim(body)}) do
-      {:ok, _} ->
+    case Repertoire.update_position_comment(position_id, trimmed_body) do
+      :ok ->
         {:noreply,
          socket
-         |> load_add_form_from_position(socket.assigns.side, socket.assigns.current_position)
+         |> update_child_comment_in_assigns(position_id, trimmed_body)
          |> assign(:editing_comment_id, nil)}
 
-      {:error, _changeset} ->
+      :error ->
         {:noreply, put_flash(socket, :error, "Unable to save comment")}
     end
   end
 
   @impl true
   def handle_event("edit-comment", %{"id" => id}, socket) do
-    position = Repertoire.get_position!(id)
+    position_id = String.to_integer(id)
+
+    position =
+      Enum.find(socket.assigns.children, fn child -> child.id == position_id end) ||
+        Repertoire.get_position!(position_id)
 
     {:noreply,
      assign(socket,
@@ -318,6 +323,19 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Failed to delete move")}
     end
+  end
+
+  defp update_child_comment_in_assigns(socket, id, comment) do
+    children =
+      Enum.map(socket.assigns.children, fn child ->
+        if child.id == id do
+          %{child | comment: comment}
+        else
+          child
+        end
+      end)
+
+    assign(socket, children: children)
   end
 
   defp load_add_form(socket, side, position_id) do
