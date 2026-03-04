@@ -78,15 +78,38 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           </div>
         </div>
       <% else %>
-        <div class="mt-6">
-          <div class="alert alert-success">
-            <span>
-              No positions due for review! Come back later or add more moves to your repertoire.
-            </span>
+        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <div>
+            <div class="bg-base-200 rounded-xl p-4 flex justify-center">
+              <div style="width: min(100%, 720px); height: min(100%, 720px);">
+                <.chessboard
+                  id="review-board"
+                  fen={@root_position.fen}
+                  orientation={@side}
+                  draggable={false}
+                  class="w-full h-full"
+                />
+              </div>
+            </div>
           </div>
-          <.button navigate={~p"/repertoire/#{@side}"} class="mt-4">
-            Back to Repertoire
-          </.button>
+
+          <div>
+            <div class="bg-base-200 rounded-xl p-4">
+              <div class="alert alert-success">
+                <span>
+                  No positions due for review! Come back later or add more moves to your repertoire.
+                </span>
+              </div>
+              <div class="mt-6">
+                <.button
+                  navigate={~p"/repertoire/#{@side}"}
+                  class="btn btn-primary w-full"
+                >
+                  Back to Repertoire
+                </.button>
+              </div>
+            </div>
+          </div>
         </div>
       <% end %>
     </Layouts.app>
@@ -216,6 +239,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             side: side,
             due_positions: due_positions,
             current_position: parent,
+            root_position: Repertoire.get_root(side),
             due_targets: targets,
             found_targets: [],
             all_found: targets == [],
@@ -229,10 +253,13 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
 
       :none ->
+        root = Repertoire.get_root(side)
+
         assign(socket,
           side: side,
           due_positions: [],
           current_position: nil,
+          root_position: root,
           due_targets: [],
           found_targets: [],
           all_found: false,
