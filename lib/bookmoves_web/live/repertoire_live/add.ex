@@ -12,7 +12,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       container_class="mx-auto w-full max-w-[1000px] space-y-4"
     >
       <.header>
-        Add Moves - {@side |> String.upcase()}
+        View/Add Moves - {@side |> String.upcase()}
         <:subtitle>Drag pieces to build your opening lines.</:subtitle>
         <:actions>
           <.button navigate={~p"/repertoire/#{@side}"}>
@@ -209,6 +209,25 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       true ->
         parent_position = Repertoire.get_position_by_fen(parent_fen, side)
         {:noreply, load_add_form_from_position(socket, side, parent_position)}
+    end
+  end
+
+  @impl true
+  def handle_event("advance", _params, socket) do
+    %{side: side, children: children, position_chain: position_chain} = socket.assigns
+
+    case children do
+      [%Repertoire.Position{} = child] ->
+        new_chain =
+          case position_chain do
+            [_ | _] -> position_chain ++ [child]
+            _ -> build_position_chain(child, side)
+          end
+
+        {:noreply, apply_position_state(socket, side, child, new_chain)}
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
