@@ -84,6 +84,9 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                         id={"possible-move-#{child.id}"}
                         phx-click="navigate"
                         phx-value-fen={child.fen}
+                        phx-hook="MovePreview"
+                        data-preview-fen={child.fen}
+                        data-base-fen={@current_fen}
                       >
                         <div class="flex items-start justify-between gap-3">
                           <div class="flex-1">
@@ -267,6 +270,12 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       :error ->
         {:noreply, put_flash(socket, :error, "Unable to save comment")}
     end
+  end
+
+  @impl true
+  def handle_event("preview-move", %{"fen" => preview_fen}, socket) do
+    # This event handles both hover preview and hover clear by setting the target fen.
+    {:noreply, push_event(socket, "board-preview", %{fen: preview_fen, animate: true})}
   end
 
   @impl true

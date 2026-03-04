@@ -17,6 +17,7 @@ defmodule BookmovesWeb.ChessComponents do
       data-orientation={@orientation}
       data-draggable={@draggable}
       phx-hook="Chessboard"
+      phx-update="ignore"
     >
     </div>
     """

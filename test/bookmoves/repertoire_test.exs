@@ -10,7 +10,7 @@ defmodule Bookmoves.RepertoireTest do
 
       {:ok, pos1} =
         Repertoire.create_position(%{
-          fen: "fen-1",
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
           color_side: "white"
@@ -18,7 +18,7 @@ defmodule Bookmoves.RepertoireTest do
 
       {:ok, pos2} =
         Repertoire.create_position(%{
-          fen: "fen-2",
+          fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
           san: "e5",
           parent_fen: pos1.fen,
           color_side: "white"
@@ -26,7 +26,7 @@ defmodule Bookmoves.RepertoireTest do
 
       {:ok, pos3} =
         Repertoire.create_position(%{
-          fen: "fen-3",
+          fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
           san: "Nf3",
           parent_fen: pos2.fen,
           color_side: "white"
@@ -44,26 +44,61 @@ defmodule Bookmoves.RepertoireTest do
       root = white_root_fixture()
 
       attrs_list = [
-        %{fen: "fen-bulk-1", san: "e4", parent_fen: root.fen, color_side: "white"},
-        %{fen: "fen-bulk-2", san: "d4", parent_fen: root.fen, color_side: "white"}
+        %{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white"
+        },
+        %{
+          fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+          san: "d4",
+          parent_fen: root.fen,
+          color_side: "white"
+        }
       ]
 
       assert {:ok, _} = Repertoire.create_positions(attrs_list)
-      assert Repertoire.get_position_by_fen("fen-bulk-1", "white")
-      assert Repertoire.get_position_by_fen("fen-bulk-2", "white")
+
+      assert Repertoire.get_position_by_fen(
+               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+               "white"
+             )
+
+      assert Repertoire.get_position_by_fen(
+               "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+               "white"
+             )
     end
 
     test "create_positions rolls back on invalid attrs" do
       root = white_root_fixture()
 
       attrs_list = [
-        %{fen: "fen-bulk-3", san: "e4", parent_fen: root.fen, color_side: "white"},
-        %{fen: "fen-bulk-4", san: "d4", parent_fen: root.fen}
+        %{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white"
+        },
+        %{
+          fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+          san: "d4",
+          parent_fen: root.fen
+        }
       ]
 
       assert {:error, _, _changeset, _} = Repertoire.create_positions(attrs_list)
-      refute Repertoire.get_position_by_fen("fen-bulk-3", "white")
-      refute Repertoire.get_position_by_fen("fen-bulk-4", "white")
+
+      refute Repertoire.get_position_by_fen(
+               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+               "white"
+             )
+
+      refute Repertoire.get_position_by_fen(
+               "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+               "white"
+             )
     end
 
     test "update_position updates persisted fields" do
@@ -71,8 +106,8 @@ defmodule Bookmoves.RepertoireTest do
 
       {:ok, position} =
         Repertoire.create_position(%{
-          fen: "fen-update-1",
-          san: "e4",
+          fen: "rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq - 0 1",
+          san: "c4",
           parent_fen: root.fen,
           color_side: "white"
         })

@@ -127,6 +127,15 @@ export const ChessboardHook = {
       if (!san) return;
       this.removeHintArrow(san);
     });
+
+    this.handleEvent("board-preview", ({ fen: targetFen, animate }) => {
+      if (!targetFen || !this.board) return;
+
+      const shouldAnimate = animate === true;
+      this.currentFen = targetFen;
+      this.chess.load(targetFen);
+      this.board.setPosition(targetFen, shouldAnimate);
+    });
   },
 
   setHintArrows(fen, sans) {
