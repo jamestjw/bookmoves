@@ -11,6 +11,7 @@ defmodule Bookmoves.Repertoire.Position do
           parent_fen: String.t() | nil,
           comment: String.t() | nil,
           color_side: String.t() | nil,
+          move_color: String.t() | nil,
           next_review_at: DateTime.t() | nil,
           last_reviewed_at: DateTime.t() | nil,
           interval_days: integer() | nil,
@@ -26,6 +27,7 @@ defmodule Bookmoves.Repertoire.Position do
           optional(:san) => String.t() | nil,
           optional(:parent_fen) => String.t() | nil,
           optional(:comment) => String.t() | nil,
+          optional(:move_color) => String.t() | nil,
           optional(:next_review_at) => DateTime.t() | nil,
           optional(:last_reviewed_at) => DateTime.t() | nil,
           optional(:interval_days) => integer() | nil,
@@ -40,6 +42,7 @@ defmodule Bookmoves.Repertoire.Position do
           parent_fen: String.t() | nil,
           comment: String.t() | nil,
           color_side: String.t(),
+          move_color: String.t() | nil,
           next_review_at: DateTime.t() | nil,
           last_reviewed_at: DateTime.t() | nil,
           interval_days: integer() | nil,
@@ -58,6 +61,7 @@ defmodule Bookmoves.Repertoire.Position do
     field :parent_fen, :string
     field :comment, :string
     field :color_side, :string
+    field :move_color, :string
     field :next_review_at, :utc_datetime
     field :last_reviewed_at, :utc_datetime
     field :interval_days, :integer
@@ -77,6 +81,7 @@ defmodule Bookmoves.Repertoire.Position do
       :parent_fen,
       :comment,
       :color_side,
+      :move_color,
       :next_review_at,
       :last_reviewed_at,
       :interval_days,
@@ -86,6 +91,7 @@ defmodule Bookmoves.Repertoire.Position do
     |> validate_required([:fen, :color_side])
     |> put_defaults()
     |> validate_inclusion(:color_side, ["white", "black"])
+    |> validate_inclusion(:move_color, ["white", "black"])
     |> validate_number(:interval_days, greater_than_or_equal_to: 1)
     |> validate_number(:ease_factor, greater_than_or_equal_to: 1.3)
     |> validate_number(:repetitions, greater_than_or_equal_to: 0)
@@ -100,6 +106,36 @@ defmodule Bookmoves.Repertoire.Position do
     |> put_change_if_missing(:interval_days, 1)
     |> put_change_if_missing(:ease_factor, 2.5)
     |> put_change_if_missing(:repetitions, 0)
+    |> put_move_color()
+  end
+
+  defp put_move_color(changeset) do
+    case get_field(changeset, :move_color) do
+      nil ->
+        parent_fen = get_field(changeset, :parent_fen)
+
+        if is_binary(parent_fen) do
+          put_change(changeset, :move_color, side_to_move_from_fen(parent_fen))
+        else
+          changeset
+        end
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp side_to_move_from_fen(fen) when is_binary(fen) do
+    case String.split(fen, " ", parts: 3) do
+      [_board, "w" | _rest] ->
+        "white"
+
+      [_board, "b" | _rest] ->
+        "black"
+
+      _ ->
+        raise ArgumentError, "invalid FEN: expected side-to-move token in '#{fen}'"
+    end
   end
 
   defp put_change_if_missing(changeset, field, default) do
