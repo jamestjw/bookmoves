@@ -123,20 +123,34 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           sanitized_move in target_sans ->
             new_found = [sanitized_move | found_targets]
             all_found = length(new_found) == length(target_sans)
+            hint_sans = socket.assigns.hint_sans || []
+
+            {remaining_hints, removed_hint} = pop_hint_san(hint_sans, sanitized_move)
 
             socket =
               assign(socket,
                 found_targets: new_found,
                 all_found: all_found,
                 show_result: true,
-                last_result: :correct
+                last_result: :correct,
+                hint_sans: remaining_hints
               )
+
+            socket =
+              if removed_hint do
+                push_event(socket, "board-remove-hint-arrow", %{san: removed_hint})
+              else
+                socket
+              end
 
             if all_found do
               advance_after_complete(socket, parent_position, attempted_incorrect)
             else
               socket =
-                push_event(socket, "board-reset", %{fen: socket.assigns.current_position.fen})
+                push_event(socket, "board-reset", %{
+                  fen: socket.assigns.current_position.fen,
+                  hintSans: socket.assigns.hint_sans
+                })
 
               {:noreply, socket}
             end
@@ -149,7 +163,10 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                 last_result: :incorrect,
                 attempted_incorrect: true
               )
-              |> push_event("board-reset", %{fen: socket.assigns.current_position.fen})
+              |> push_event("board-reset", %{
+                fen: socket.assigns.current_position.fen,
+                hintSans: socket.assigns.hint_sans
+              })
 
             {:noreply, socket}
         end
@@ -188,18 +205,28 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
     case build_due_batch(due_positions, side) do
       {:ok, parent, targets} ->
-        assign(socket,
-          side: side,
-          due_positions: due_positions,
-          current_position: parent,
-          due_targets: targets,
-          found_targets: [],
-          all_found: targets == [],
-          show_result: false,
-          last_result: nil,
-          attempted_incorrect: false,
-          move_notation: build_notation(parent, side)
-        )
+        hint_sans =
+          targets
+          |> Enum.filter(&is_nil(&1.last_reviewed_at))
+          |> Enum.map(& &1.san)
+          |> Enum.reject(&is_nil/1)
+
+        socket =
+          assign(socket,
+            side: side,
+            due_positions: due_positions,
+            current_position: parent,
+            due_targets: targets,
+            found_targets: [],
+            all_found: targets == [],
+            show_result: false,
+            last_result: nil,
+            attempted_incorrect: false,
+            move_notation: build_notation(parent, side),
+            hint_sans: hint_sans
+          )
+
+        push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
 
       :none ->
         assign(socket,
@@ -212,7 +239,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           show_result: false,
           last_result: nil,
           attempted_incorrect: false,
-          move_notation: ""
+          move_notation: "",
+          hint_sans: []
         )
     end
   end
@@ -241,6 +269,12 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           {next_position, opponent_san} = auto_reply(next_user_move)
           next_children = Repertoire.get_children(next_position)
 
+          hint_sans =
+            next_children
+            |> Enum.filter(&is_nil(&1.last_reviewed_at))
+            |> Enum.map(& &1.san)
+            |> Enum.reject(&is_nil/1)
+
           socket =
             assign(socket,
               current_position: next_position,
@@ -249,7 +283,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               all_found: next_children == [],
               show_result: next_children != [],
               last_result: :correct,
-              move_notation: build_notation(next_position, side)
+              move_notation: build_notation(next_position, side),
+              hint_sans: hint_sans
             )
 
           socket =
@@ -257,10 +292,14 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               push_event(socket, "board-auto-move", %{
                 san: opponent_san,
                 fen: next_position.fen,
-                delay: 200
+                delay: 200,
+                hintSans: hint_sans
               })
             else
-              socket
+              push_event(socket, "board-reset", %{
+                fen: next_position.fen,
+                hintSans: hint_sans
+              })
             end
 
           if next_children == [] do
@@ -334,5 +373,18 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     else
       acc
     end
+  end
+
+  defp pop_hint_san(hint_sans, sanitized_move) do
+    {remaining, removed} =
+      Enum.reduce(hint_sans, {[], nil}, fn san, {acc, removed} ->
+        if removed == nil and String.upcase(san) == sanitized_move do
+          {acc, san}
+        else
+          {[san | acc], removed}
+        end
+      end)
+
+    {Enum.reverse(remaining), removed}
   end
 end
