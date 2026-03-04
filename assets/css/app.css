@@ -104,8 +104,8 @@
 
 /* This file is for your main application CSS */
 
-@import "../vendor/cm-chessboard/chessboard";
-@import "../vendor/cm-chessboard/extensions/arrows/arrows";
+@import "../vendor/cm-chessboard/chessboard.css";
+@import "../vendor/cm-chessboard/extensions/arrows/arrows.css";
 
 .chessboard-container {
   width: 100%;

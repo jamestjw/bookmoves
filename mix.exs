@@ -83,7 +83,13 @@ defmodule Bookmoves.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind bookmoves", "esbuild bookmoves"],
+      "assets.build": [
+        "compile",
+        "tailwind bookmoves",
+        "esbuild bookmoves",
+        "cmd mkdir -p priv/static/assets/cm-chessboard",
+        "cmd cp -r assets/vendor/cm-chessboard/. priv/static/assets/cm-chessboard/"
+      ],
       "assets.deploy": [
         "tailwind bookmoves --minify",
         "esbuild bookmoves --minify",
