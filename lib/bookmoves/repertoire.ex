@@ -43,6 +43,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets positions due for review for a specific color side (user's turn).
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec list_due_positions_for_side(color_side(), DateTime.t()) :: [Position.persisted_t()]
   def list_due_positions_for_side(color_side, now \\ DateTime.utc_now())
       when color_side in ["white", "black"] do
@@ -54,6 +55,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets children of a position (moves in the repertoire from this position).
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec get_children(Position.persisted_t()) :: [Position.persisted_t()]
   def get_children(%Position{} = position) do
     Repo.all(
@@ -66,6 +68,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets children by fen and color side.
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec get_children(String.t(), String.t()) :: [Position.persisted_t()]
   def get_children(fen, color_side) when is_binary(fen) and is_binary(color_side) do
     Repo.all(
@@ -97,12 +100,14 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets a single position.
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec get_position!(pos_integer()) :: Position.persisted_t()
   def get_position!(id), do: Repo.get!(Position, id)
 
   @doc """
   Creates a position.
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec create_position(Position.attrs()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position(attrs) do
@@ -114,6 +119,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Creates a position or returns existing if fen + color_side already exists.
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec create_position_if_not_exists(Position.attrs()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position_if_not_exists(attrs) do
@@ -234,6 +240,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Creates multiple positions from a list of attribute maps.
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec create_positions([Position.attrs()]) ::
           {:ok, map()}
           | {:error, term(), Ecto.Changeset.t(), map()}
@@ -251,6 +258,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Updates a position.
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec update_position(Position.persisted_t(), map()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def update_position(%Position{} = position, attrs) do
@@ -262,6 +270,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Updates a position comment without loading the record.
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec update_position_comment(pos_integer(), String.t()) :: :ok | :error
   def update_position_comment(id, comment) when is_integer(id) do
     {count, _} =
@@ -274,6 +283,7 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Deletes a position.
   """
+  # TODO: Scope by owner when multi-user support is added.
   @spec delete_position(Position.persisted_t()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def delete_position(%Position{} = position) do
@@ -349,6 +359,7 @@ defmodule Bookmoves.Repertoire do
   end
 
   @spec count_due_positions_for_side(color_side(), DateTime.t()) :: non_neg_integer()
+  # TODO: Scope by owner when multi-user support is added.
   def count_due_positions_for_side(color_side, now \\ DateTime.utc_now())
       when color_side in ["white", "black"] do
     due_positions_query(color_side, now)
