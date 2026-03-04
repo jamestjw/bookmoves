@@ -281,8 +281,9 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               due_targets: next_children,
               found_targets: [],
               all_found: next_children == [],
-              show_result: next_children != [],
-              last_result: :correct,
+              show_result: false,
+              last_result: nil,
+              attempted_incorrect: false,
               move_notation: build_notation(next_position, side),
               hint_sans: hint_sans
             )
