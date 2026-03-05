@@ -3,6 +3,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
   alias Bookmoves.Repertoire
   alias Bookmoves.Repertoire.Position
+  alias Bookmoves.ReviewBatch
   require Logger
 
   @impl true
@@ -270,44 +271,34 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   defp start_review(socket, side) do
-    due_positions =
-      Repertoire.list_due_positions_for_side(side, DateTime.utc_now(), limit: batch_size())
+    due_chains =
+      ReviewBatch.build_due_chains_batch(side,
+        batch_size: batch_size(),
+        chain_limit: chain_limit()
+      )
 
-    case build_due_batch(due_positions, side) do
-      {:ok, parent, targets} ->
-        hint_sans =
-          targets
-          |> Enum.filter(&is_nil(&1.last_reviewed_at))
-          |> Enum.map(& &1.san)
-          |> Enum.reject(&is_nil/1)
-
+    case due_chains do
+      [chain | _rest] ->
         socket =
           assign(socket,
             side: side,
-            due_positions: due_positions,
-            current_position: parent,
             root_position: Repertoire.get_root(side),
-            due_targets: targets,
-            found_targets: [],
-            all_found: targets == [],
-            show_result: false,
-            last_result: nil,
-            attempted_incorrect: false,
-            move_notation: build_notation(parent, side),
-            hint_sans: hint_sans,
             batch_count: 0,
             batch_complete?: false,
             remaining_due_count: 0
           )
 
-        push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
+        start_chain(socket, side, due_chains, 0, chain, 0)
 
-      :none ->
+      [] ->
         root = Repertoire.get_root(side)
 
         assign(socket,
           side: side,
-          due_positions: [],
+          due_chains: [],
+          current_chain_index: 0,
+          current_chain_step: 0,
+          current_due: nil,
           current_position: nil,
           root_position: root,
           due_targets: [],
@@ -330,24 +321,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     |> Repertoire.format_notation_with_numbers()
   end
 
-  defp build_due_batch(due_positions, side) do
-    due_positions
-    |> Enum.group_by(& &1.parent_fen)
-    |> Enum.find_value(:none, fn
-      {nil, _targets} ->
-        nil
-
-      {parent_fen, targets} ->
-        case Repertoire.get_position_by_fen(parent_fen, side) do
-          %Position{} = parent ->
-            {:ok, parent, targets}
-
-          _ ->
-            nil
-        end
-    end)
-  end
-
   defp score_targets(targets, correct) do
     Enum.reduce_while(targets, :ok, fn target, _acc ->
       case Repertoire.review_position(target, correct: correct) do
@@ -361,18 +334,15 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     %{
       side: side,
       due_targets: due_targets,
-      due_positions: due_positions,
       batch_count: batch_count
     } = socket.assigns
 
     case score_targets(due_targets, correct) do
       :ok ->
-        updated_due_positions = remove_due_positions(due_positions, due_targets)
         new_batch_count = batch_count + length(due_targets)
 
         socket =
           assign(socket,
-            due_positions: updated_due_positions,
             batch_count: new_batch_count
           )
 
@@ -401,11 +371,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               {:noreply, start_review(socket, side)}
             end
 
-          updated_due_positions == [] ->
-            {:noreply, start_review(socket, side)}
-
           true ->
-            handle_next_due_position(socket, updated_due_positions, due_targets)
+            advance_within_batch(socket)
         end
 
       {:error, _changeset} ->
@@ -413,70 +380,97 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     end
   end
 
-  defp handle_next_due_position(socket, updated_due_positions, due_targets) do
-    %{side: side} = socket.assigns
+  defp advance_within_batch(socket) do
+    %{
+      side: side,
+      due_chains: due_chains,
+      current_chain_index: chain_index,
+      current_chain_step: chain_step,
+      current_due: current_due
+    } = socket.assigns
 
-    case next_due_followup(due_targets, updated_due_positions) do
-      {:ok, next_position, opponent_san, next_children} ->
-        hint_sans =
-          next_children
-          |> Enum.filter(&is_nil(&1.last_reviewed_at))
-          |> Enum.map(& &1.san)
-          |> Enum.reject(&is_nil/1)
-
-        socket =
-          assign(socket,
-            current_position: next_position,
-            due_targets: next_children,
-            found_targets: [],
-            all_found: next_children == [],
-            show_result: false,
-            last_result: nil,
-            attempted_incorrect: false,
-            move_notation: build_notation(next_position, side),
-            hint_sans: hint_sans,
-            batch_complete?: false
-          )
-
-        socket =
-          if opponent_san do
-            push_event(socket, "board-auto-move", %{
-              san: opponent_san,
-              fen: next_position.fen,
-              delay: 200,
-              hintSans: hint_sans
-            })
-          else
-            push_event(socket, "board-reset", %{
-              fen: next_position.fen,
-              hintSans: hint_sans
-            })
-          end
-
-        {:noreply, socket}
-
+    case Enum.at(due_chains, chain_index) do
       nil ->
-        {:noreply, start_next_due(socket, updated_due_positions)}
+        {:noreply, start_review(socket, side)}
+
+      chain ->
+        next_due = Enum.at(chain, chain_step + 1)
+
+        cond do
+          next_due ->
+            {:noreply, advance_chain_step(socket, current_due, next_due)}
+
+          next_chain = Enum.at(due_chains, chain_index + 1) ->
+            {:noreply, start_chain(socket, side, due_chains, chain_index + 1, next_chain, 0)}
+
+          true ->
+            {:noreply, start_review(socket, side)}
+        end
     end
   end
 
-  defp start_next_due(socket, due_positions) do
-    %{side: side} = socket.assigns
+  defp start_chain(socket, side, due_chains, chain_index, chain, chain_step) do
+    current_due = Enum.at(chain, chain_step)
 
-    case build_due_batch(due_positions, side) do
-      {:ok, parent, targets} ->
+    case current_due do
+      %Position{} = due_position ->
+        case Repertoire.get_position_by_fen(due_position.parent_fen, side) do
+          %Position{} = parent ->
+            hint_sans =
+              [due_position]
+              |> Enum.filter(&is_nil(&1.last_reviewed_at))
+              |> Enum.map(& &1.san)
+              |> Enum.reject(&is_nil/1)
+
+            socket =
+              assign(socket,
+                due_chains: due_chains,
+                current_chain_index: chain_index,
+                current_chain_step: chain_step,
+                current_due: due_position,
+                current_position: parent,
+                due_targets: [due_position],
+                found_targets: [],
+                all_found: false,
+                show_result: false,
+                last_result: nil,
+                attempted_incorrect: false,
+                move_notation: build_notation(parent, side),
+                hint_sans: hint_sans,
+                batch_complete?: false
+              )
+
+            push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
+
+          _ ->
+            start_review(socket, side)
+        end
+
+      _ ->
+        start_review(socket, side)
+    end
+  end
+
+  defp advance_chain_step(socket, %Position{} = _current_due, %Position{} = next_due) do
+    %{side: side, current_chain_index: _chain_index, current_chain_step: chain_step} =
+      socket.assigns
+
+    case Repertoire.get_position_by_fen(next_due.parent_fen, side) do
+      %Position{} = parent ->
         hint_sans =
-          targets
+          [next_due]
           |> Enum.filter(&is_nil(&1.last_reviewed_at))
           |> Enum.map(& &1.san)
           |> Enum.reject(&is_nil/1)
 
         socket =
           assign(socket,
+            current_chain_step: chain_step + 1,
+            current_due: next_due,
             current_position: parent,
-            due_targets: targets,
+            due_targets: [next_due],
             found_targets: [],
-            all_found: targets == [],
+            all_found: false,
             show_result: false,
             last_result: nil,
             attempted_incorrect: false,
@@ -487,47 +481,17 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
         push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
 
-      :none ->
-        assign(socket,
-          current_position: nil,
-          due_targets: [],
-          found_targets: [],
-          all_found: false,
-          show_result: false,
-          last_result: nil,
-          attempted_incorrect: false,
-          move_notation: "",
-          hint_sans: [],
-          batch_complete?: false,
-          remaining_due_count: 0
-        )
+      _ ->
+        start_review(socket, side)
     end
-  end
-
-  defp next_due_followup(due_targets, remaining_due_positions) do
-    Enum.find_value(due_targets, fn target ->
-      {next_position, opponent_san} = auto_reply(target)
-
-      next_children =
-        Enum.filter(remaining_due_positions, fn position ->
-          position.parent_fen == next_position.fen
-        end)
-
-      if next_children != [] do
-        {:ok, next_position, opponent_san, next_children}
-      else
-        nil
-      end
-    end)
-  end
-
-  defp remove_due_positions(due_positions, targets) do
-    target_ids = MapSet.new(Enum.map(targets, & &1.id))
-    Enum.reject(due_positions, fn position -> position.id in target_ids end)
   end
 
   defp batch_size do
     Application.get_env(:bookmoves, :review_batch_size, 20)
+  end
+
+  defp chain_limit do
+    3
   end
 
   defp abort_review(socket, side, message) do
@@ -535,16 +499,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
      socket
      |> put_flash(:error, message)
      |> push_navigate(to: ~p"/repertoire/#{side}")}
-  end
-
-  defp auto_reply(%Position{} = user_move) do
-    case Repertoire.get_children(user_move) do
-      [] ->
-        {user_move, nil}
-
-      [opponent_move | _] ->
-        {opponent_move, opponent_move.san}
-    end
   end
 
   defp build_notation_recursive(%Position{san: nil}, _side, acc) do

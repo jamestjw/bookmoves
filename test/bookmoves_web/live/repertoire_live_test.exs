@@ -83,7 +83,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "1. e4"
     end
 
-    test "prompts when more correct moves remain", %{conn: conn} do
+    test "does not prompt for additional correct moves in batch", %{conn: conn} do
       root = white_root_fixture()
 
       {:ok, _} =
@@ -116,10 +116,10 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
 
       html = render(view)
-      assert html =~ "Good move. Keep going—there are more correct moves."
+      refute html =~ "Good move. Keep going—there are more correct moves."
     end
 
-    test "warns when a move is repeated", %{conn: conn} do
+    test "marks repeated move as not due once advanced", %{conn: conn} do
       root = white_root_fixture()
 
       {:ok, _} =
@@ -153,7 +153,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
 
       html = render(view)
-      assert html =~ "That move is already found. Try a different correct move."
+      assert html =~ "That is a valid move, but not one that is due right now."
     end
 
     test "shows an error for incorrect moves", %{conn: conn} do

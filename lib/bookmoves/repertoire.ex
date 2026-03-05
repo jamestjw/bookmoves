@@ -59,6 +59,38 @@ defmodule Bookmoves.Repertoire do
     |> Repo.all()
   end
 
+  @spec get_next_due_position_for_side(color_side(), DateTime.t(), [pos_integer()]) ::
+          Position.persisted_t() | nil
+  def get_next_due_position_for_side(color_side, now \\ DateTime.utc_now(), exclude_ids \\ [])
+      when color_side in ["white", "black"] do
+    due_positions_query(color_side, now)
+    |> maybe_exclude_ids(exclude_ids)
+    |> order_by([p], asc: p.next_review_at, asc: p.id)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  @spec get_next_due_child_for_side(String.t(), color_side(), DateTime.t(), [pos_integer()]) ::
+          Position.persisted_t() | nil
+  def get_next_due_child_for_side(
+        parent_fen,
+        color_side,
+        now \\ DateTime.utc_now(),
+        exclude_ids \\ []
+      )
+      when is_binary(parent_fen) and color_side in ["white", "black"] do
+    from(p in Position,
+      where:
+        p.parent_fen == ^parent_fen and p.color_side == ^color_side and
+          p.move_color == ^color_side and
+          p.next_review_at <= ^now
+    )
+    |> maybe_exclude_ids(exclude_ids)
+    |> order_by([p], asc: p.next_review_at, asc: p.id)
+    |> limit(1)
+    |> Repo.one()
+  end
+
   @doc """
   Gets children of a position (moves in the repertoire from this position).
   """
@@ -386,6 +418,12 @@ defmodule Bookmoves.Repertoire do
 
   defp maybe_limit(query, limit) when is_integer(limit) and limit > 0 do
     from(p in query, limit: ^limit)
+  end
+
+  defp maybe_exclude_ids(query, []), do: query
+
+  defp maybe_exclude_ids(query, exclude_ids) do
+    from(p in query, where: p.id not in ^exclude_ids)
   end
 
   @doc """
