@@ -315,7 +315,10 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   defp build_notation(%Position{} = position, side) do
-    build_notation_recursive(position, side, [])
+    position.fen
+    |> Repertoire.get_position_chain(side)
+    |> Enum.map(& &1.san)
+    |> Enum.reject(&is_nil/1)
     |> Repertoire.format_notation_with_numbers()
   end
 
@@ -472,21 +475,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
      socket
      |> put_flash(:error, message)
      |> push_navigate(to: ~p"/repertoire/#{side}")}
-  end
-
-  defp build_notation_recursive(%Position{san: nil}, _side, acc) do
-    acc
-  end
-
-  defp build_notation_recursive(%Position{} = position, side, acc) do
-    parent = Repertoire.get_position_by_fen(position.parent_fen, side)
-
-    if parent && parent.san do
-      acc = [parent.san | acc]
-      build_notation_recursive(parent, side, acc)
-    else
-      acc
-    end
   end
 
   defp pop_hint_san(hint_sans, sanitized_move) do
