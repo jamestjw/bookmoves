@@ -73,6 +73,12 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                 </div>
               <% end %>
 
+              <%= if @show_result and @last_result == :not_due do %>
+                <div class="alert alert-info mt-4">
+                  <span>That is a valid move, but not one that is due right now.</span>
+                </div>
+              <% end %>
+
               <div class="mt-4">
                 <.button phx-click="skip" class="btn btn-primary w-full hover:brightness-110">
                   Skip
@@ -99,19 +105,37 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
           <div>
             <div class="bg-base-200 rounded-xl p-4">
-              <div class="alert alert-success">
-                <span>
-                  No positions due for review! Come back later or add more moves to your repertoire.
-                </span>
-              </div>
-              <div class="mt-6">
-                <.button
-                  navigate={~p"/repertoire/#{@side}"}
-                  class="btn btn-primary w-full"
-                >
-                  Back to Repertoire
-                </.button>
-              </div>
+              <%= if @batch_complete? and @remaining_due_count > 0 do %>
+                <div class="alert alert-success">
+                  <span>Batch complete. {@remaining_due_count} positions remaining.</span>
+                </div>
+                <div class="mt-6 space-y-3">
+                  <.button
+                    id="review-next-batch"
+                    phx-click="continue"
+                    class="btn btn-primary w-full"
+                  >
+                    Review next {min(@remaining_due_count, batch_size())} positions
+                  </.button>
+                  <.button navigate={~p"/repertoire/#{@side}"} class="btn btn-ghost w-full">
+                    Back to Repertoire
+                  </.button>
+                </div>
+              <% else %>
+                <div class="alert alert-success">
+                  <span>
+                    No positions due for review! Come back later or add more moves to your repertoire.
+                  </span>
+                </div>
+                <div class="mt-6">
+                  <.button
+                    navigate={~p"/repertoire/#{@side}"}
+                    class="btn btn-primary w-full"
+                  >
+                    Back to Repertoire
+                  </.button>
+                </div>
+              <% end %>
             </div>
           </div>
         </div>
@@ -135,6 +159,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         sanitized_move = String.upcase(san)
 
         target_sans = Enum.map(due_targets, &String.upcase(&1.san || ""))
+
+        all_children_sans =
+          parent_position
+          |> Repertoire.get_children()
+          |> Enum.map(&String.upcase(&1.san || ""))
 
         cond do
           sanitized_move in found_targets ->
@@ -171,7 +200,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               end
 
             if all_found do
-              advance_after_complete(socket, parent_position, attempted_incorrect)
+              correct = not attempted_incorrect
+              handle_scored_targets(socket, correct)
             else
               socket =
                 push_event(socket, "board-reset", %{
@@ -181,6 +211,20 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
               {:noreply, socket}
             end
+
+          sanitized_move in all_children_sans ->
+            socket =
+              socket
+              |> assign(
+                show_result: true,
+                last_result: :not_due
+              )
+              |> push_event("board-reset", %{
+                fen: socket.assigns.current_position.fen,
+                hintSans: socket.assigns.hint_sans
+              })
+
+            {:noreply, socket}
 
           true ->
             socket =
@@ -210,25 +254,24 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
   @impl true
   def handle_event("skip", _params, socket) do
-    %{side: side} = socket.assigns
-
     case socket.assigns do
       %{current_position: %Position{}, due_targets: due_targets} when due_targets != [] ->
-        case score_targets(due_targets, false) do
-          :ok ->
-            {:noreply, start_review(socket, side)}
-
-          {:error, _changeset} ->
-            abort_review(socket, side, "Unable to record review result. Please try again.")
-        end
+        handle_scored_targets(socket, false)
 
       _ ->
         {:noreply, socket}
     end
   end
 
+  @impl true
+  def handle_event("continue", _params, socket) do
+    %{side: side} = socket.assigns
+    {:noreply, start_review(socket, side)}
+  end
+
   defp start_review(socket, side) do
-    due_positions = Repertoire.list_due_positions_for_side(side)
+    due_positions =
+      Repertoire.list_due_positions_for_side(side, DateTime.utc_now(), limit: batch_size())
 
     case build_due_batch(due_positions, side) do
       {:ok, parent, targets} ->
@@ -251,7 +294,10 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             last_result: nil,
             attempted_incorrect: false,
             move_notation: build_notation(parent, side),
-            hint_sans: hint_sans
+            hint_sans: hint_sans,
+            batch_count: 0,
+            batch_complete?: false,
+            remaining_due_count: 0
           )
 
         push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
@@ -271,7 +317,10 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           last_result: nil,
           attempted_incorrect: false,
           move_notation: "",
-          hint_sans: []
+          hint_sans: [],
+          batch_count: 0,
+          batch_complete?: false,
+          remaining_due_count: 0
         )
     end
   end
@@ -279,73 +328,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   defp build_notation(%Position{} = position, side) do
     build_notation_recursive(position, side, [])
     |> Repertoire.format_notation_with_numbers()
-  end
-
-  defp advance_after_complete(socket, %Position{} = _parent_position, attempted_incorrect) do
-    %{side: side, due_targets: due_targets} = socket.assigns
-    correct = not attempted_incorrect
-
-    case score_targets(due_targets, correct) do
-      :ok ->
-        now = DateTime.utc_now()
-
-        next_user_move =
-          Enum.find(due_targets, fn target ->
-            target.next_review_at && DateTime.compare(target.next_review_at, now) != :gt
-          end) || List.first(due_targets)
-
-        if next_user_move do
-          # TODO: Use existing due_positions to select next batch of due targets.
-          #       Current logic can surface non-due moves after auto-reply.
-          {next_position, opponent_san} = auto_reply(next_user_move)
-          next_children = Repertoire.get_children(next_position)
-
-          hint_sans =
-            next_children
-            |> Enum.filter(&is_nil(&1.last_reviewed_at))
-            |> Enum.map(& &1.san)
-            |> Enum.reject(&is_nil/1)
-
-          socket =
-            assign(socket,
-              current_position: next_position,
-              due_targets: next_children,
-              found_targets: [],
-              all_found: next_children == [],
-              show_result: false,
-              last_result: nil,
-              attempted_incorrect: false,
-              move_notation: build_notation(next_position, side),
-              hint_sans: hint_sans
-            )
-
-          socket =
-            if opponent_san do
-              push_event(socket, "board-auto-move", %{
-                san: opponent_san,
-                fen: next_position.fen,
-                delay: 200,
-                hintSans: hint_sans
-              })
-            else
-              push_event(socket, "board-reset", %{
-                fen: next_position.fen,
-                hintSans: hint_sans
-              })
-            end
-
-          if next_children == [] do
-            {:noreply, start_review(socket, side)}
-          else
-            {:noreply, socket}
-          end
-        else
-          {:noreply, start_review(socket, side)}
-        end
-
-      {:error, _changeset} ->
-        abort_review(socket, side, "Unable to record review result. Please try again.")
-    end
   end
 
   defp build_due_batch(due_positions, side) do
@@ -373,6 +355,179 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         {:error, changeset} -> {:halt, {:error, changeset}}
       end
     end)
+  end
+
+  defp handle_scored_targets(socket, correct) do
+    %{
+      side: side,
+      due_targets: due_targets,
+      due_positions: due_positions,
+      batch_count: batch_count
+    } = socket.assigns
+
+    case score_targets(due_targets, correct) do
+      :ok ->
+        updated_due_positions = remove_due_positions(due_positions, due_targets)
+        new_batch_count = batch_count + length(due_targets)
+
+        socket =
+          assign(socket,
+            due_positions: updated_due_positions,
+            batch_count: new_batch_count
+          )
+
+        cond do
+          new_batch_count >= batch_size() ->
+            remaining_due_count = Repertoire.count_due_positions_for_side(side)
+
+            socket =
+              assign(socket,
+                current_position: nil,
+                due_targets: [],
+                found_targets: [],
+                all_found: false,
+                show_result: false,
+                last_result: nil,
+                attempted_incorrect: false,
+                move_notation: "",
+                hint_sans: [],
+                batch_complete?: true,
+                remaining_due_count: remaining_due_count
+              )
+
+            if remaining_due_count > 0 do
+              {:noreply, socket}
+            else
+              {:noreply, start_review(socket, side)}
+            end
+
+          updated_due_positions == [] ->
+            {:noreply, start_review(socket, side)}
+
+          true ->
+            handle_next_due_position(socket, updated_due_positions, due_targets)
+        end
+
+      {:error, _changeset} ->
+        abort_review(socket, side, "Unable to record review result. Please try again.")
+    end
+  end
+
+  defp handle_next_due_position(socket, updated_due_positions, due_targets) do
+    %{side: side} = socket.assigns
+
+    case next_due_followup(due_targets, updated_due_positions) do
+      {:ok, next_position, opponent_san, next_children} ->
+        hint_sans =
+          next_children
+          |> Enum.filter(&is_nil(&1.last_reviewed_at))
+          |> Enum.map(& &1.san)
+          |> Enum.reject(&is_nil/1)
+
+        socket =
+          assign(socket,
+            current_position: next_position,
+            due_targets: next_children,
+            found_targets: [],
+            all_found: next_children == [],
+            show_result: false,
+            last_result: nil,
+            attempted_incorrect: false,
+            move_notation: build_notation(next_position, side),
+            hint_sans: hint_sans,
+            batch_complete?: false
+          )
+
+        socket =
+          if opponent_san do
+            push_event(socket, "board-auto-move", %{
+              san: opponent_san,
+              fen: next_position.fen,
+              delay: 200,
+              hintSans: hint_sans
+            })
+          else
+            push_event(socket, "board-reset", %{
+              fen: next_position.fen,
+              hintSans: hint_sans
+            })
+          end
+
+        {:noreply, socket}
+
+      nil ->
+        {:noreply, start_next_due(socket, updated_due_positions)}
+    end
+  end
+
+  defp start_next_due(socket, due_positions) do
+    %{side: side} = socket.assigns
+
+    case build_due_batch(due_positions, side) do
+      {:ok, parent, targets} ->
+        hint_sans =
+          targets
+          |> Enum.filter(&is_nil(&1.last_reviewed_at))
+          |> Enum.map(& &1.san)
+          |> Enum.reject(&is_nil/1)
+
+        socket =
+          assign(socket,
+            current_position: parent,
+            due_targets: targets,
+            found_targets: [],
+            all_found: targets == [],
+            show_result: false,
+            last_result: nil,
+            attempted_incorrect: false,
+            move_notation: build_notation(parent, side),
+            hint_sans: hint_sans,
+            batch_complete?: false
+          )
+
+        push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
+
+      :none ->
+        assign(socket,
+          current_position: nil,
+          due_targets: [],
+          found_targets: [],
+          all_found: false,
+          show_result: false,
+          last_result: nil,
+          attempted_incorrect: false,
+          move_notation: "",
+          hint_sans: [],
+          batch_complete?: false,
+          remaining_due_count: 0
+        )
+    end
+  end
+
+  defp next_due_followup(due_targets, remaining_due_positions) do
+    Enum.find_value(due_targets, fn target ->
+      {next_position, opponent_san} = auto_reply(target)
+
+      next_children =
+        Enum.filter(remaining_due_positions, fn position ->
+          position.parent_fen == next_position.fen
+        end)
+
+      if next_children != [] do
+        {:ok, next_position, opponent_san, next_children}
+      else
+        nil
+      end
+    end)
+  end
+
+  defp remove_due_positions(due_positions, targets) do
+    target_ids = MapSet.new(Enum.map(targets, & &1.id))
+    Enum.reject(due_positions, fn position -> position.id in target_ids end)
+  end
+
+  defp batch_size do
+    Application.get_env(:bookmoves, :review_batch_size, 20)
   end
 
   defp abort_review(socket, side, message) do

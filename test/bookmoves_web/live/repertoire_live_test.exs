@@ -220,5 +220,39 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       html = render(view)
       assert html =~ "No positions due for review!"
     end
+
+    test "prompts to continue after a batch", %{conn: conn} do
+      Application.put_env(:bookmoves, :review_batch_size, 1)
+      on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
+
+      root = white_root_fixture()
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+
+      _due_one =
+        position_fixture(%{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: past
+        })
+
+      _due_two =
+        position_fixture(%{
+          fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+          san: "d4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: past
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+
+      render_click(view, "skip")
+
+      html = render(view)
+      assert html =~ "Batch complete."
+      assert html =~ "positions remaining."
+    end
   end
 end

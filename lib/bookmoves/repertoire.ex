@@ -42,13 +42,20 @@ defmodule Bookmoves.Repertoire do
 
   @doc """
   Gets positions due for review for a specific color side (user's turn).
+
+  Options:
+    * `:limit` - max number of positions to return
   """
   # TODO: Scope by owner when multi-user support is added.
-  @spec list_due_positions_for_side(color_side(), DateTime.t()) :: [Position.persisted_t()]
-  def list_due_positions_for_side(color_side, now \\ DateTime.utc_now())
+  @spec list_due_positions_for_side(color_side(), DateTime.t(), keyword()) ::
+          [Position.persisted_t()]
+  def list_due_positions_for_side(color_side, now \\ DateTime.utc_now(), opts \\ [])
       when color_side in ["white", "black"] do
+    limit = Keyword.get(opts, :limit)
+
     due_positions_query(color_side, now)
     |> order_by([p], asc: p.next_review_at, asc: p.id)
+    |> maybe_limit(limit)
     |> Repo.all()
   end
 
@@ -373,6 +380,12 @@ defmodule Bookmoves.Repertoire do
       where:
         p.color_side == ^color_side and p.move_color == ^color_side and p.next_review_at <= ^now
     )
+  end
+
+  defp maybe_limit(query, nil), do: query
+
+  defp maybe_limit(query, limit) when is_integer(limit) and limit > 0 do
+    from(p in query, limit: ^limit)
   end
 
   @doc """
