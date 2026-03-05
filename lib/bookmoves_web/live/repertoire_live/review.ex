@@ -278,17 +278,16 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       )
 
     case due_chains do
-      [chain | _rest] ->
+      [chain | rest_chains] ->
         socket =
           assign(socket,
             side: side,
             root_position: Repertoire.get_root(side),
-            batch_count: 0,
             batch_complete?: false,
             remaining_due_count: 0
           )
 
-        start_chain(socket, side, due_chains, 0, chain, 0)
+        start_chain(socket, side, rest_chains, chain)
 
       [] ->
         root = Repertoire.get_root(side)
@@ -296,8 +295,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         assign(socket,
           side: side,
           due_chains: [],
-          current_chain_index: 0,
-          current_chain_step: 0,
+          remaining_chains: [],
+          current_chain: [],
           current_due: nil,
           current_position: nil,
           root_position: root,
@@ -309,7 +308,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           attempted_incorrect: false,
           move_notation: "",
           hint_sans: [],
-          batch_count: 0,
           batch_complete?: false,
           remaining_due_count: 0
         )
@@ -331,49 +329,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   defp handle_scored_targets(socket, correct) do
-    %{
-      side: side,
-      due_targets: due_targets,
-      batch_count: batch_count
-    } = socket.assigns
+    %{due_targets: due_targets, side: side} = socket.assigns
 
     case score_targets(due_targets, correct) do
       :ok ->
-        new_batch_count = batch_count + length(due_targets)
-
-        socket =
-          assign(socket,
-            batch_count: new_batch_count
-          )
-
-        cond do
-          new_batch_count >= batch_size() ->
-            remaining_due_count = Repertoire.count_due_positions_for_side(side)
-
-            socket =
-              assign(socket,
-                current_position: nil,
-                due_targets: [],
-                found_targets: [],
-                all_found: false,
-                show_result: false,
-                last_result: nil,
-                attempted_incorrect: false,
-                move_notation: "",
-                hint_sans: [],
-                batch_complete?: true,
-                remaining_due_count: remaining_due_count
-              )
-
-            if remaining_due_count > 0 do
-              {:noreply, socket}
-            else
-              {:noreply, start_review(socket, side)}
-            end
-
-          true ->
-            advance_within_batch(socket)
-        end
+        advance_within_batch(socket)
 
       {:error, _changeset} ->
         abort_review(socket, side, "Unable to record review result. Please try again.")
@@ -381,79 +341,66 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   defp advance_within_batch(socket) do
-    %{
-      side: side,
-      due_chains: due_chains,
-      current_chain_index: chain_index,
-      current_chain_step: chain_step,
-      current_due: current_due
-    } = socket.assigns
+    %{side: side, current_chain: current_chain, remaining_chains: remaining_chains} =
+      socket.assigns
 
-    case Enum.at(due_chains, chain_index) do
-      nil ->
-        {:noreply, start_review(socket, side)}
+    case current_chain do
+      [_current_due, next_due | rest_chain] ->
+        {:noreply, advance_chain_step(socket, next_due, rest_chain)}
 
-      chain ->
-        next_due = Enum.at(chain, chain_step + 1)
+      [_current_due] ->
+        case remaining_chains do
+          [next_chain | rest_chains] ->
+            {:noreply, start_chain(socket, side, rest_chains, next_chain)}
 
-        cond do
-          next_due ->
-            {:noreply, advance_chain_step(socket, current_due, next_due)}
-
-          next_chain = Enum.at(due_chains, chain_index + 1) ->
-            {:noreply, start_chain(socket, side, due_chains, chain_index + 1, next_chain, 0)}
-
-          true ->
-            {:noreply, start_review(socket, side)}
+          [] ->
+            {:noreply, complete_batch(socket, side)}
         end
+
+      _ ->
+        {:noreply, start_review(socket, side)}
     end
   end
 
-  defp start_chain(socket, side, due_chains, chain_index, chain, chain_step) do
-    current_due = Enum.at(chain, chain_step)
+  defp start_chain(socket, side, remaining_chains, [%Position{} = due_position | rest_chain]) do
+    case Repertoire.get_position_by_fen(due_position.parent_fen, side) do
+      %Position{} = parent ->
+        hint_sans =
+          [due_position]
+          |> Enum.filter(&is_nil(&1.last_reviewed_at))
+          |> Enum.map(& &1.san)
+          |> Enum.reject(&is_nil/1)
 
-    case current_due do
-      %Position{} = due_position ->
-        case Repertoire.get_position_by_fen(due_position.parent_fen, side) do
-          %Position{} = parent ->
-            hint_sans =
-              [due_position]
-              |> Enum.filter(&is_nil(&1.last_reviewed_at))
-              |> Enum.map(& &1.san)
-              |> Enum.reject(&is_nil/1)
+        socket =
+          assign(socket,
+            remaining_chains: remaining_chains,
+            current_chain: [due_position | rest_chain],
+            current_due: due_position,
+            current_position: parent,
+            due_targets: [due_position],
+            found_targets: [],
+            all_found: false,
+            show_result: false,
+            last_result: nil,
+            attempted_incorrect: false,
+            move_notation: build_notation(parent, side),
+            hint_sans: hint_sans,
+            batch_complete?: false
+          )
 
-            socket =
-              assign(socket,
-                due_chains: due_chains,
-                current_chain_index: chain_index,
-                current_chain_step: chain_step,
-                current_due: due_position,
-                current_position: parent,
-                due_targets: [due_position],
-                found_targets: [],
-                all_found: false,
-                show_result: false,
-                last_result: nil,
-                attempted_incorrect: false,
-                move_notation: build_notation(parent, side),
-                hint_sans: hint_sans,
-                batch_complete?: false
-              )
-
-            push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
-
-          _ ->
-            start_review(socket, side)
-        end
+        push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
 
       _ ->
         start_review(socket, side)
     end
   end
 
-  defp advance_chain_step(socket, %Position{} = _current_due, %Position{} = next_due) do
-    %{side: side, current_chain_index: _chain_index, current_chain_step: chain_step} =
-      socket.assigns
+  defp start_chain(socket, side, _remaining_chains, _chain) do
+    start_review(socket, side)
+  end
+
+  defp advance_chain_step(socket, %Position{} = next_due, rest_chain) do
+    %{side: side, remaining_chains: _remaining_chains} = socket.assigns
 
     case Repertoire.get_position_by_fen(next_due.parent_fen, side) do
       %Position{} = parent ->
@@ -465,7 +412,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
         socket =
           assign(socket,
-            current_chain_step: chain_step + 1,
+            current_chain: [next_due | rest_chain],
             current_due: next_due,
             current_position: parent,
             due_targets: [next_due],
@@ -483,6 +430,32 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
       _ ->
         start_review(socket, side)
+    end
+  end
+
+  defp complete_batch(socket, side) do
+    remaining_due_count = Repertoire.count_due_positions_for_side(side)
+
+    socket =
+      assign(socket,
+        current_position: nil,
+        due_targets: [],
+        found_targets: [],
+        all_found: false,
+        show_result: false,
+        last_result: nil,
+        attempted_incorrect: false,
+        move_notation: "",
+        hint_sans: [],
+        batch_complete?: true,
+        remaining_due_count: remaining_due_count
+      )
+
+    if remaining_due_count > 0 do
+      socket
+    else
+      # No remaining due positions; restart review to show the empty state.
+      start_review(socket, side)
     end
   end
 
