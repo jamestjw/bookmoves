@@ -464,7 +464,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   defp chain_limit do
-    3
+    Application.get_env(:bookmoves, :review_chain_limit, 3)
   end
 
   defp abort_review(socket, side, message) do
