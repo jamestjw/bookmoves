@@ -6,7 +6,7 @@ defmodule BookmovesWeb.RepertoireLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
       <.header>
         Your Repertoire
         <:subtitle>Choose a side to review or study.</:subtitle>

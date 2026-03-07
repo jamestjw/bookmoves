@@ -13,6 +13,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     ~H"""
     <Layouts.app
       flash={@flash}
+      current_scope={@current_scope}
       container_class="mx-auto w-full max-w-[1000px] space-y-4"
       main_class="px-4 py-6 sm:px-6 lg:px-8"
     >

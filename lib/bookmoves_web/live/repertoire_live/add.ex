@@ -8,6 +8,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     ~H"""
     <Layouts.app
       flash={@flash}
+      current_scope={@current_scope}
       show_header={false}
       container_class="mx-auto w-full max-w-[1000px] space-y-4"
     >

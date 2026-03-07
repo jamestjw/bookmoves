@@ -1,6 +1,8 @@
 defmodule BookmovesWeb.Router do
   use BookmovesWeb, :router
 
+  import BookmovesWeb.UserAuth
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -8,6 +10,7 @@ defmodule BookmovesWeb.Router do
     plug :put_root_layout, html: {BookmovesWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :fetch_current_scope_for_user
   end
 
   pipeline :api do
@@ -18,13 +21,19 @@ defmodule BookmovesWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+  end
 
-    live "/repertoire", RepertoireLive.Index, :index
-    live "/repertoire/:side", RepertoireLive.Show, :show
-    live "/repertoire/:side/review", RepertoireLive.Review, :review
-    live "/repertoire/:side/practice", RepertoireLive.Review, :practice
-    live "/repertoire/:side/add", RepertoireLive.Add, :add
-    live "/repertoire/:side/add/:position_id", RepertoireLive.Add, :add_from_position
+  live_session :authenticated, on_mount: [{BookmovesWeb.UserAuth, :require_authenticated_user}] do
+    scope "/", BookmovesWeb do
+      pipe_through :browser
+
+      live "/repertoire", RepertoireLive.Index, :index
+      live "/repertoire/:side", RepertoireLive.Show, :show
+      live "/repertoire/:side/review", RepertoireLive.Review, :review
+      live "/repertoire/:side/practice", RepertoireLive.Review, :practice
+      live "/repertoire/:side/add", RepertoireLive.Add, :add
+      live "/repertoire/:side/add/:position_id", RepertoireLive.Add, :add_from_position
+    end
   end
 
   # Other scopes may use custom stacks.
@@ -47,5 +56,31 @@ defmodule BookmovesWeb.Router do
       live_dashboard "/dashboard", metrics: BookmovesWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
+  end
+
+  ## Authentication routes
+
+  scope "/", BookmovesWeb do
+    pipe_through [:browser, :redirect_if_user_is_authenticated]
+
+    get "/users/register", UserRegistrationController, :new
+    post "/users/register", UserRegistrationController, :create
+  end
+
+  scope "/", BookmovesWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/users/settings", UserSettingsController, :edit
+    put "/users/settings", UserSettingsController, :update
+    get "/users/settings/confirm-email/:token", UserSettingsController, :confirm_email
+  end
+
+  scope "/", BookmovesWeb do
+    pipe_through [:browser]
+
+    get "/users/log-in", UserSessionController, :new
+    get "/users/log-in/:token", UserSessionController, :confirm
+    post "/users/log-in", UserSessionController, :create
+    delete "/users/log-out", UserSessionController, :delete
   end
 end

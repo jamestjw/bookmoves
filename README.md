@@ -11,6 +11,7 @@ Bookmoves is a Phoenix LiveView app for spaced repetition training of chess open
 - **Batch Review**: Review due moves in batches with short linear chains
 - **Practice Mode**: Review random moves without affecting spaced repetition
 - **Transposition Handling**: Same positions are merged automatically
+- **User Accounts**: Register and log in to access your repertoire
 
 ## Future features
 

@@ -6,6 +6,8 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
   alias Bookmoves.Repertoire
 
+  setup :register_and_log_in_user
+
   describe "review" do
     test "accepts SAN moves as correct", %{conn: conn} do
       root = white_root_fixture()

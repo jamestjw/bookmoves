@@ -6,7 +6,7 @@ defmodule BookmovesWeb.RepertoireLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
       <.header>
         {@side |> String.upcase() |> Kernel.<>(" Repertoire") |> String.trim()}
         <:subtitle>View and manage your opening repertoire.</:subtitle>
