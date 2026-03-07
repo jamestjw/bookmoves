@@ -17,6 +17,16 @@ defmodule Bookmoves.ReviewBatch do
     build_due_chains_batch(side, now, batch_size, chain_limit, MapSet.new(), [], 0)
   end
 
+  @spec build_practice_chains_batch(Repertoire.color_side(), keyword()) :: [chain()]
+  def build_practice_chains_batch(side, opts \\ []) when side in ["white", "black"] do
+    batch_size = Keyword.get(opts, :batch_size, 20)
+    exclude_ids = Keyword.get(opts, :exclude_ids, [])
+
+    side
+    |> Repertoire.list_random_positions_for_side(limit: batch_size, exclude_ids: exclude_ids)
+    |> Enum.map(&[&1])
+  end
+
   @spec build_due_chains_batch(
           String.t(),
           DateTime.t(),

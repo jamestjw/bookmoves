@@ -22,6 +22,7 @@ defmodule BookmovesWeb.Router do
     live "/repertoire", RepertoireLive.Index, :index
     live "/repertoire/:side", RepertoireLive.Show, :show
     live "/repertoire/:side/review", RepertoireLive.Review, :review
+    live "/repertoire/:side/practice", RepertoireLive.Review, :practice
     live "/repertoire/:side/add", RepertoireLive.Add, :add
     live "/repertoire/:side/add/:position_id", RepertoireLive.Add, :add_from_position
   end

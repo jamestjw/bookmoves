@@ -6,6 +6,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   alias Bookmoves.ReviewBatch
   require Logger
 
+  @type review_mode :: :due | :practice
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -15,14 +17,22 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       main_class="px-4 py-6 sm:px-6 lg:px-8"
     >
       <.header>
-        Review {@side |> String.upcase()}
-        <:subtitle>Play the moves from your repertoire.</:subtitle>
+        {review_title(@review_mode)} {@side |> String.upcase()}
+        <:subtitle>
+          {review_subtitle(@review_mode)}
+        </:subtitle>
         <:actions>
           <.button navigate={~p"/repertoire/#{@side}"}>
             <.icon name="hero-arrow-left" /> Back
           </.button>
         </:actions>
       </.header>
+
+      <%= if @review_mode == :practice do %>
+        <div class="alert alert-info">
+          <span>Practice mode does not affect your spaced repetition schedule.</span>
+        </div>
+      <% end %>
 
       <%= if @current_position do %>
         <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -106,7 +116,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
           <div>
             <div class="bg-base-200 rounded-xl p-4">
-              <%= if @batch_complete? and @remaining_due_count > 0 do %>
+              <%= if @batch_complete? and @review_mode == :due and @remaining_due_count > 0 do %>
                 <div class="alert alert-success">
                   <span>Batch complete. {@remaining_due_count} positions remaining.</span>
                 </div>
@@ -124,17 +134,46 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                 </div>
               <% else %>
                 <div class="alert alert-success">
-                  <span>
-                    No positions due for review! Come back later or add more moves to your repertoire.
-                  </span>
+                  <span>{@empty_state_message}</span>
                 </div>
                 <div class="mt-6">
-                  <.button
-                    navigate={~p"/repertoire/#{@side}"}
-                    class="btn btn-primary w-full"
-                  >
-                    Back to Repertoire
-                  </.button>
+                  <%= if @review_mode == :practice and @batch_complete? and @practice_available? do %>
+                    <.button
+                      id="practice-more"
+                      phx-click="continue"
+                      class="btn btn-primary w-full"
+                    >
+                      Practice more moves
+                    </.button>
+                    <.button
+                      navigate={~p"/repertoire/#{@side}"}
+                      class="btn btn-ghost w-full mt-3"
+                    >
+                      Back to Repertoire
+                    </.button>
+                  <% else %>
+                    <%= if @review_mode == :due and @practice_available? do %>
+                      <.button
+                        navigate={~p"/repertoire/#{@side}/practice"}
+                        class="btn btn-primary w-full"
+                      >
+                        Practice now
+                      </.button>
+                      <.button
+                        navigate={~p"/repertoire/#{@side}"}
+                        class="btn btn-ghost w-full mt-3"
+                      >
+                        Back to Repertoire
+                      </.button>
+                    <% else %>
+                      <.button
+                        navigate={~p"/repertoire/#{@side}"}
+                        class="btn btn-primary w-full"
+                      >
+                        Back to Repertoire
+                      </.button>
+                    <% end %>
+                  <% end %>
                 </div>
               <% end %>
             </div>
@@ -147,7 +186,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
   @impl true
   def mount(%{"side" => side}, _session, socket) when side in ["white", "black"] do
-    {:ok, start_review(socket, side)}
+    {:ok, start_review(socket, side, review_mode(socket))}
   end
 
   @impl true
@@ -266,17 +305,47 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
   @impl true
   def handle_event("continue", _params, socket) do
-    %{side: side} = socket.assigns
-    {:noreply, start_review(socket, side)}
+    %{side: side, review_mode: review_mode} = socket.assigns
+    {:noreply, start_review(socket, side, review_mode)}
   end
 
-  @spec start_review(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
-  defp start_review(socket, side) do
-    due_chains =
-      ReviewBatch.build_due_chains_batch(side,
-        batch_size: batch_size(),
-        chain_limit: chain_limit()
-      )
+  @spec start_review(Phoenix.LiveView.Socket.t(), String.t(), review_mode()) ::
+          Phoenix.LiveView.Socket.t()
+  defp start_review(socket, side, review_mode) do
+    {due_chains, practice_seen_ids} =
+      case review_mode do
+        :practice ->
+          practice_seen_ids = Map.get(socket.assigns, :practice_seen_ids, MapSet.new())
+          exclude_ids = MapSet.to_list(practice_seen_ids)
+
+          practice_chains =
+            ReviewBatch.build_practice_chains_batch(side,
+              batch_size: batch_size(),
+              exclude_ids: exclude_ids
+            )
+
+          {practice_chains, practice_seen_ids} =
+            if practice_chains == [] and exclude_ids != [] do
+              {ReviewBatch.build_practice_chains_batch(side, batch_size: batch_size()),
+               MapSet.new()}
+            else
+              {practice_chains, practice_seen_ids}
+            end
+
+          new_seen_ids =
+            practice_chains
+            |> List.flatten()
+            |> Enum.map(& &1.id)
+            |> Enum.reduce(practice_seen_ids, &MapSet.put(&2, &1))
+
+          {practice_chains, new_seen_ids}
+
+        :due ->
+          {ReviewBatch.build_due_chains_batch(side,
+             batch_size: batch_size(),
+             chain_limit: chain_limit()
+           ), MapSet.new()}
+      end
 
     case due_chains do
       [chain | rest_chains] ->
@@ -285,7 +354,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             side: side,
             root_position: Repertoire.get_root(side),
             batch_complete?: false,
-            remaining_due_count: 0
+            remaining_due_count: 0,
+            review_mode: review_mode,
+            empty_state_message: empty_state_message(review_mode),
+            practice_available?: practice_available?(side),
+            practice_seen_ids: practice_seen_ids
           )
 
         start_chain(socket, side, rest_chains, chain)
@@ -310,7 +383,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           move_notation: "",
           hint_sans: [],
           batch_complete?: false,
-          remaining_due_count: 0
+          remaining_due_count: 0,
+          review_mode: review_mode,
+          empty_state_message: empty_state_message(review_mode),
+          practice_available?: practice_available?(side),
+          practice_seen_ids: practice_seen_ids
         )
     end
   end
@@ -339,12 +416,18 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   defp handle_scored_targets(socket, correct) do
     %{due_targets: due_targets, side: side} = socket.assigns
 
-    case score_targets(due_targets, correct) do
-      :ok ->
+    case socket.assigns.review_mode do
+      :practice ->
         advance_within_batch(socket)
 
-      {:error, _changeset} ->
-        abort_review(socket, side, "Unable to record review result. Please try again.")
+      :due ->
+        case score_targets(due_targets, correct) do
+          :ok ->
+            advance_within_batch(socket)
+
+          {:error, _changeset} ->
+            abort_review(socket, side, "Unable to record review result. Please try again.")
+        end
     end
   end
 
@@ -368,7 +451,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         end
 
       _ ->
-        {:noreply, start_review(socket, side)}
+        {:noreply, start_review(socket, side, socket.assigns.review_mode)}
     end
   end
 
@@ -405,14 +488,14 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
 
       _ ->
-        start_review(socket, side)
+        start_review(socket, side, socket.assigns.review_mode)
     end
   end
 
   @spec start_chain(Phoenix.LiveView.Socket.t(), String.t(), [Bookmoves.ReviewBatch.chain()], []) ::
           Phoenix.LiveView.Socket.t()
   defp start_chain(socket, side, _remaining_chains, _chain) do
-    start_review(socket, side)
+    start_review(socket, side, socket.assigns.review_mode)
   end
 
   @spec advance_chain_step(Phoenix.LiveView.Socket.t(), Position.persisted_t(), [
@@ -449,34 +532,53 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
 
       _ ->
-        start_review(socket, side)
+        start_review(socket, side, socket.assigns.review_mode)
     end
   end
 
   @spec complete_batch(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
   defp complete_batch(socket, side) do
-    remaining_due_count = Repertoire.count_due_positions_for_side(side)
+    case socket.assigns.review_mode do
+      :practice ->
+        assign(socket,
+          current_position: nil,
+          due_targets: [],
+          found_targets: [],
+          all_found: false,
+          show_result: false,
+          last_result: nil,
+          attempted_incorrect: false,
+          move_notation: "",
+          hint_sans: [],
+          batch_complete?: true,
+          remaining_due_count: 0,
+          empty_state_message: "Practice complete. Want another batch?"
+        )
 
-    socket =
-      assign(socket,
-        current_position: nil,
-        due_targets: [],
-        found_targets: [],
-        all_found: false,
-        show_result: false,
-        last_result: nil,
-        attempted_incorrect: false,
-        move_notation: "",
-        hint_sans: [],
-        batch_complete?: true,
-        remaining_due_count: remaining_due_count
-      )
+      :due ->
+        remaining_due_count = Repertoire.count_due_positions_for_side(side)
 
-    if remaining_due_count > 0 do
-      socket
-    else
-      # No remaining due positions; restart review to show the empty state.
-      start_review(socket, side)
+        socket =
+          assign(socket,
+            current_position: nil,
+            due_targets: [],
+            found_targets: [],
+            all_found: false,
+            show_result: false,
+            last_result: nil,
+            attempted_incorrect: false,
+            move_notation: "",
+            hint_sans: [],
+            batch_complete?: true,
+            remaining_due_count: remaining_due_count
+          )
+
+        if remaining_due_count > 0 do
+          socket
+        else
+          # No remaining due positions; restart review to show the empty state.
+          start_review(socket, side, :due)
+        end
     end
   end
 
@@ -497,6 +599,36 @@ defmodule BookmovesWeb.RepertoireLive.Review do
      socket
      |> put_flash(:error, message)
      |> push_navigate(to: ~p"/repertoire/#{side}")}
+  end
+
+  @spec review_mode(Phoenix.LiveView.Socket.t()) :: review_mode()
+  defp review_mode(socket) do
+    # live_action is the route action for this LiveView (set by the router).
+    # We use it to distinguish /review vs /practice routes that share this module.
+    case socket.assigns.live_action do
+      :practice -> :practice
+      _ -> :due
+    end
+  end
+
+  @spec review_title(review_mode()) :: String.t()
+  defp review_title(:practice), do: "Practice"
+  defp review_title(:due), do: "Review"
+
+  @spec review_subtitle(review_mode()) :: String.t()
+  defp review_subtitle(:practice), do: "Warm up with random moves from your repertoire."
+  defp review_subtitle(:due), do: "Play the moves from your repertoire."
+
+  @spec empty_state_message(review_mode()) :: String.t()
+  defp empty_state_message(:practice), do: "No positions available to practice yet."
+
+  defp empty_state_message(:due) do
+    "No positions due for review! Come back later or add more moves to your repertoire."
+  end
+
+  @spec practice_available?(String.t()) :: boolean()
+  defp practice_available?(side) do
+    Repertoire.count_practice_positions_for_side(side) > 0
   end
 
   @spec pop_hint_san([String.t()], String.t()) :: {[String.t()], String.t() | nil}

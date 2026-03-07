@@ -17,6 +17,9 @@ defmodule BookmovesWeb.RepertoireLive.Show do
           <.button navigate={~p"/repertoire/#{@side}/review"} disabled={@due_count == 0}>
             Review ({@due_count} due)
           </.button>
+          <.button navigate={~p"/repertoire/#{@side}/practice"} disabled={@total_count == 0}>
+            Practice
+          </.button>
         </:actions>
       </.header>
 
@@ -51,13 +54,14 @@ defmodule BookmovesWeb.RepertoireLive.Show do
   @spec load_repertoire(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
   defp load_repertoire(socket, side) do
     root = Repertoire.get_root(side)
-    due_count = Repertoire.get_stats(side).due
+    stats = Repertoire.get_stats(side)
 
     assign(socket,
       page_title: "#{String.upcase(side)} Repertoire",
       side: side,
       root_position: root,
-      due_count: due_count
+      due_count: stats.due,
+      total_count: stats.total
     )
   end
 end

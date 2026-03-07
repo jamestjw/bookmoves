@@ -399,6 +399,34 @@ defmodule Bookmoves.Repertoire do
     }
   end
 
+  @doc """
+  Returns a random list of positions to practice for a side.
+
+  Options:
+    * `:limit` - max number of positions to return
+    * `:exclude_ids` - position IDs to exclude
+  """
+  @spec list_random_positions_for_side(color_side(), keyword()) :: [Position.persisted_t()]
+  def list_random_positions_for_side(color_side, opts \\ [])
+      when color_side in ["white", "black"] do
+    limit = Keyword.get(opts, :limit, 20)
+    exclude_ids = Keyword.get(opts, :exclude_ids, [])
+
+    practice_positions_query(color_side)
+    |> maybe_exclude_ids(exclude_ids)
+    |> order_by([p], fragment("RANDOM()"))
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
+  @spec count_practice_positions_for_side(color_side()) :: non_neg_integer()
+  def count_practice_positions_for_side(color_side) when color_side in ["white", "black"] do
+    practice_positions_query(color_side)
+    |> select([p], count(p.id))
+    |> Repo.one()
+    |> Kernel.||(0)
+  end
+
   @spec count_due_positions_for_side(color_side(), DateTime.t()) :: non_neg_integer()
   # TODO: Scope by owner when multi-user support is added.
   def count_due_positions_for_side(color_side, now \\ DateTime.utc_now())
@@ -414,6 +442,13 @@ defmodule Bookmoves.Repertoire do
     from(p in Position,
       where:
         p.color_side == ^color_side and p.move_color == ^color_side and p.next_review_at <= ^now
+    )
+  end
+
+  defp practice_positions_query(color_side) do
+    from(p in Position,
+      where:
+        p.color_side == ^color_side and p.move_color == ^color_side and not is_nil(p.parent_fen)
     )
   end
 
