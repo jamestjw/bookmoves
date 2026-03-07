@@ -334,6 +334,8 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     end
   end
 
+  @spec update_child_comment_in_assigns(Phoenix.LiveView.Socket.t(), pos_integer(), String.t()) ::
+          Phoenix.LiveView.Socket.t()
   defp update_child_comment_in_assigns(socket, id, comment) do
     children =
       Enum.map(socket.assigns.children, fn child ->
@@ -347,11 +349,18 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     assign(socket, children: children)
   end
 
+  @spec load_add_form(Phoenix.LiveView.Socket.t(), String.t(), pos_integer() | nil) ::
+          Phoenix.LiveView.Socket.t()
   defp load_add_form(socket, side, position_id) do
     position = if position_id, do: Repertoire.get_position!(position_id), else: nil
     load_add_form_from_position(socket, side, position)
   end
 
+  @spec load_add_form_from_position(
+          Phoenix.LiveView.Socket.t(),
+          String.t(),
+          Repertoire.Position.persisted_t() | nil
+        ) :: Phoenix.LiveView.Socket.t()
   defp load_add_form_from_position(socket, side, position) do
     current_position = if position, do: position, else: Repertoire.get_root(side)
     position_chain = build_position_chain(current_position, side)
@@ -359,6 +368,12 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     apply_position_state(socket, side, current_position, position_chain)
   end
 
+  @spec apply_position_state(
+          Phoenix.LiveView.Socket.t(),
+          String.t(),
+          Repertoire.Position.persisted_t(),
+          [Repertoire.Position.persisted_t()]
+        ) :: Phoenix.LiveView.Socket.t()
   defp apply_position_state(socket, side, position, position_chain) do
     children = Repertoire.get_children(position.fen, side)
     moves = Enum.map(position_chain, & &1.san) |> Enum.reject(&is_nil/1)
@@ -380,6 +395,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     )
   end
 
+  @spec next_move_label(Repertoire.Position.persisted_t(), non_neg_integer()) :: String.t()
   defp next_move_label(%Repertoire.Position{} = position, current_move_index) do
     move_index = current_move_index + 1
     move_number = div(move_index + 1, 2)
@@ -391,8 +407,12 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     end
   end
 
+  @spec build_position_chain(nil, String.t()) :: []
   defp build_position_chain(nil, _side), do: []
 
+  @spec build_position_chain(Repertoire.Position.persisted_t(), String.t()) :: [
+          Repertoire.Position.persisted_t()
+        ]
   defp build_position_chain(%Repertoire.Position{} = position, side) do
     Repertoire.get_position_chain(position.fen, side)
   end

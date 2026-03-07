@@ -270,6 +270,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     {:noreply, start_review(socket, side)}
   end
 
+  @spec start_review(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
   defp start_review(socket, side) do
     due_chains =
       ReviewBatch.build_due_chains_batch(side,
@@ -314,6 +315,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     end
   end
 
+  @spec build_notation(Position.persisted_t(), String.t()) :: String.t()
   defp build_notation(%Position{} = position, side) do
     position.fen
     |> Repertoire.get_position_chain(side)
@@ -322,6 +324,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     |> Repertoire.format_notation_with_numbers()
   end
 
+  @spec score_targets([Position.persisted_t()], boolean()) :: :ok | {:error, Ecto.Changeset.t()}
   defp score_targets(targets, correct) do
     Enum.reduce_while(targets, :ok, fn target, _acc ->
       case Repertoire.review_position(target, correct: correct) do
@@ -331,6 +334,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     end)
   end
 
+  @spec handle_scored_targets(Phoenix.LiveView.Socket.t(), boolean()) ::
+          {:noreply, Phoenix.LiveView.Socket.t()}
   defp handle_scored_targets(socket, correct) do
     %{due_targets: due_targets, side: side} = socket.assigns
 
@@ -343,6 +348,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     end
   end
 
+  @spec advance_within_batch(Phoenix.LiveView.Socket.t()) ::
+          {:noreply, Phoenix.LiveView.Socket.t()}
   defp advance_within_batch(socket) do
     %{side: side, current_chain: current_chain, remaining_chains: remaining_chains} =
       socket.assigns
@@ -365,6 +372,10 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     end
   end
 
+  @spec start_chain(Phoenix.LiveView.Socket.t(), String.t(), [Bookmoves.ReviewBatch.chain()], [
+          Position.persisted_t()
+        ]) ::
+          Phoenix.LiveView.Socket.t()
   defp start_chain(socket, side, remaining_chains, [%Position{} = due_position | rest_chain]) do
     case Repertoire.get_position_by_fen(due_position.parent_fen, side) do
       %Position{} = parent ->
@@ -398,10 +409,16 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     end
   end
 
+  @spec start_chain(Phoenix.LiveView.Socket.t(), String.t(), [Bookmoves.ReviewBatch.chain()], []) ::
+          Phoenix.LiveView.Socket.t()
   defp start_chain(socket, side, _remaining_chains, _chain) do
     start_review(socket, side)
   end
 
+  @spec advance_chain_step(Phoenix.LiveView.Socket.t(), Position.persisted_t(), [
+          Position.persisted_t()
+        ]) ::
+          Phoenix.LiveView.Socket.t()
   defp advance_chain_step(socket, %Position{} = next_due, rest_chain) do
     %{side: side, remaining_chains: _remaining_chains} = socket.assigns
 
@@ -436,6 +453,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     end
   end
 
+  @spec complete_batch(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
   defp complete_batch(socket, side) do
     remaining_due_count = Repertoire.count_due_positions_for_side(side)
 
@@ -462,14 +480,18 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     end
   end
 
+  @spec batch_size() :: pos_integer()
   defp batch_size do
     Application.get_env(:bookmoves, :review_batch_size, 20)
   end
 
+  @spec chain_limit() :: pos_integer()
   defp chain_limit do
     Application.get_env(:bookmoves, :review_chain_limit, 3)
   end
 
+  @spec abort_review(Phoenix.LiveView.Socket.t(), String.t(), String.t()) ::
+          {:noreply, Phoenix.LiveView.Socket.t()}
   defp abort_review(socket, side, message) do
     {:noreply,
      socket
@@ -477,6 +499,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
      |> push_navigate(to: ~p"/repertoire/#{side}")}
   end
 
+  @spec pop_hint_san([String.t()], String.t()) :: {[String.t()], String.t() | nil}
   defp pop_hint_san(hint_sans, sanitized_move) do
     {remaining, removed} =
       Enum.reduce(hint_sans, {[], nil}, fn san, {acc, removed} ->

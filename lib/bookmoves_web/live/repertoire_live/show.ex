@@ -48,6 +48,7 @@ defmodule BookmovesWeb.RepertoireLive.Show do
     {:noreply, load_repertoire(socket, socket.assigns.side)}
   end
 
+  @spec load_repertoire(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
   defp load_repertoire(socket, side) do
     root = Repertoire.get_root(side)
     due_count = Repertoire.get_stats(side).due

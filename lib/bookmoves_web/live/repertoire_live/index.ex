@@ -75,6 +75,7 @@ defmodule BookmovesWeb.RepertoireLive.Index do
     {:ok, load_stats(socket)}
   end
 
+  @spec load_stats(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
   defp load_stats(socket) do
     assign(socket,
       page_title: "Your Repertoire",

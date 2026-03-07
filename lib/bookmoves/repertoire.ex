@@ -368,6 +368,8 @@ defmodule Bookmoves.Repertoire do
     update_position(position, attrs)
   end
 
+  @spec review_position(Position.persisted_t(), correct: boolean()) ::
+          {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def review_position(%Position{} = position, correct: false) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     ease = position.ease_factor || 2.5
@@ -407,6 +409,7 @@ defmodule Bookmoves.Repertoire do
     |> Kernel.||(0)
   end
 
+  @spec due_positions_query(color_side(), DateTime.t()) :: Ecto.Query.t()
   defp due_positions_query(color_side, now) do
     from(p in Position,
       where:
@@ -414,14 +417,18 @@ defmodule Bookmoves.Repertoire do
     )
   end
 
+  @spec maybe_limit(Ecto.Query.t(), nil) :: Ecto.Query.t()
   defp maybe_limit(query, nil), do: query
 
+  @spec maybe_limit(Ecto.Query.t(), pos_integer()) :: Ecto.Query.t()
   defp maybe_limit(query, limit) when is_integer(limit) and limit > 0 do
     from(p in query, limit: ^limit)
   end
 
+  @spec maybe_exclude_ids(Ecto.Query.t(), []) :: Ecto.Query.t()
   defp maybe_exclude_ids(query, []), do: query
 
+  @spec maybe_exclude_ids(Ecto.Query.t(), [pos_integer()]) :: Ecto.Query.t()
   defp maybe_exclude_ids(query, exclude_ids) do
     from(p in query, where: p.id not in ^exclude_ids)
   end

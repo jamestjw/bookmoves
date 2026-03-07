@@ -98,6 +98,7 @@ defmodule Bookmoves.Repertoire.Position do
     |> unique_constraint([:fen, :color_side], name: :positions_fen_color_side_index)
   end
 
+  @spec put_defaults(Ecto.Changeset.t()) :: Ecto.Changeset.t()
   defp put_defaults(changeset) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
@@ -109,6 +110,7 @@ defmodule Bookmoves.Repertoire.Position do
     |> put_move_color()
   end
 
+  @spec put_move_color(Ecto.Changeset.t()) :: Ecto.Changeset.t()
   defp put_move_color(changeset) do
     case get_field(changeset, :move_color) do
       nil ->
@@ -125,6 +127,7 @@ defmodule Bookmoves.Repertoire.Position do
     end
   end
 
+  @spec side_to_move_from_fen(String.t()) :: String.t()
   defp side_to_move_from_fen(fen) when is_binary(fen) do
     case String.split(fen, " ", parts: 3) do
       [_board, "w" | _rest] ->
@@ -138,6 +141,7 @@ defmodule Bookmoves.Repertoire.Position do
     end
   end
 
+  @spec put_change_if_missing(Ecto.Changeset.t(), atom(), term()) :: Ecto.Changeset.t()
   defp put_change_if_missing(changeset, field, default) do
     case get_field(changeset, field) do
       nil -> put_change(changeset, field, default)

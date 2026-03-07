@@ -17,6 +17,15 @@ defmodule Bookmoves.ReviewBatch do
     build_due_chains_batch(side, now, batch_size, chain_limit, MapSet.new(), [], 0)
   end
 
+  @spec build_due_chains_batch(
+          String.t(),
+          DateTime.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          MapSet.t(pos_integer()),
+          [chain()],
+          non_neg_integer()
+        ) :: [chain()]
   defp build_due_chains_batch(
          side,
          now,
@@ -62,6 +71,16 @@ defmodule Bookmoves.ReviewBatch do
     end
   end
 
+  @spec build_chain(
+          Position.persisted_t(),
+          String.t(),
+          DateTime.t(),
+          MapSet.t(pos_integer()),
+          [Position.persisted_t()],
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: {[Position.persisted_t()], MapSet.t(pos_integer()), non_neg_integer()}
   defp build_chain(
          %Position{} = position,
          side,
@@ -82,7 +101,7 @@ defmodule Bookmoves.ReviewBatch do
       {opponent_move, opponent_san} = auto_reply(position)
 
       next_due =
-        if not is_nil(opponent_move) and is_binary(opponent_san) do
+        if is_binary(opponent_san) do
           Repertoire.get_next_due_child_for_side(
             opponent_move.fen,
             side,
@@ -103,6 +122,7 @@ defmodule Bookmoves.ReviewBatch do
     end
   end
 
+  @spec auto_reply(Position.persisted_t()) :: {Position.persisted_t() | nil, String.t() | nil}
   defp auto_reply(%Position{} = user_move) do
     case Repertoire.get_children(user_move) do
       [] ->
