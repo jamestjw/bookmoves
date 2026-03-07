@@ -255,4 +255,69 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "positions remaining."
     end
   end
+
+  describe "practice" do
+    test "does not update scheduling on correct moves", %{conn: conn} do
+      Application.put_env(:bookmoves, :review_batch_size, 1)
+      on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
+
+      root = white_root_fixture()
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      {:ok, _} = Repertoire.update_position(root, %{last_reviewed_at: now})
+
+      practice_pos =
+        position_fixture(%{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          move_color: "white",
+          next_review_at: DateTime.add(now, 3600, :second)
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/white/practice")
+
+      render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
+
+      unchanged = Repertoire.get_position_by_fen(practice_pos.fen, "white")
+      assert unchanged.last_reviewed_at == practice_pos.last_reviewed_at
+      assert unchanged.next_review_at == practice_pos.next_review_at
+    end
+
+    test "shows empty state when no practice-eligible positions exist", %{conn: conn} do
+      _root = white_root_fixture()
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/white/practice")
+
+      assert has_element?(view, "#review-board")
+      refute has_element?(view, "#practice-more")
+      assert render(view) =~ "No positions available to practice yet."
+    end
+
+    test "prompts to practice more moves after a batch", %{conn: conn} do
+      Application.put_env(:bookmoves, :review_batch_size, 1)
+      on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
+
+      root = white_root_fixture()
+
+      _practice_one =
+        position_fixture(%{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          move_color: "white"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/white/practice")
+
+      render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
+
+      assert has_element?(view, "#practice-more")
+
+      render_click(view, "continue")
+      assert has_element?(view, "#review-board")
+    end
+  end
 end
