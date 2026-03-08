@@ -9,18 +9,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
   setup :register_and_log_in_user
 
   describe "review" do
-    test "accepts SAN moves as correct", %{conn: conn} do
+    test "accepts SAN moves as correct", %{conn: conn, scope: scope} do
       root = white_root_fixture()
-
-      {:ok, _} =
-        Repertoire.update_position(root, %{
-          next_review_at: DateTime.add(DateTime.utc_now(), -60, :second)
-        })
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -36,14 +31,12 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "No positions due for review!"
     end
 
-    test "shows current move list under the board", %{conn: conn} do
+    test "shows current move list under the board", %{conn: conn, scope: scope} do
       root = white_root_fixture()
       future = DateTime.add(DateTime.utc_now(), 3600, :second)
 
-      {:ok, _} = Repertoire.update_position(root, %{next_review_at: future})
-
       {:ok, pos1} =
-        Repertoire.create_position(%{
+        Repertoire.create_position(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -52,7 +45,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       {:ok, pos2} =
-        Repertoire.create_position(%{
+        Repertoire.create_position(scope, %{
           fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
           san: "e5",
           parent_fen: pos1.fen,
@@ -61,7 +54,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       {:ok, pos3} =
-        Repertoire.create_position(%{
+        Repertoire.create_position(scope, %{
           fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
           san: "Nf3",
           parent_fen: pos2.fen,
@@ -70,7 +63,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       _pos4 =
-        Repertoire.create_position(%{
+        Repertoire.create_position(scope, %{
           fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
           san: "Nc6",
           parent_fen: pos3.fen,
@@ -85,18 +78,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "1. e4"
     end
 
-    test "does not prompt for additional correct moves in batch", %{conn: conn} do
+    test "does not prompt for additional correct moves in batch", %{conn: conn, scope: scope} do
       root = white_root_fixture()
-
-      {:ok, _} =
-        Repertoire.update_position(root, %{
-          next_review_at: DateTime.add(DateTime.utc_now(), -60, :second)
-        })
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due_child =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -105,7 +93,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       _child_two =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
           san: "d4",
           parent_fen: root.fen,
@@ -121,18 +109,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       refute html =~ "Good move. Keep going—there are more correct moves."
     end
 
-    test "marks repeated move as not due once advanced", %{conn: conn} do
+    test "marks repeated move as not due once advanced", %{conn: conn, scope: scope} do
       root = white_root_fixture()
-
-      {:ok, _} =
-        Repertoire.update_position(root, %{
-          next_review_at: DateTime.add(DateTime.utc_now(), -60, :second)
-        })
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due_child =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -141,7 +124,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       _child_two =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
           san: "d4",
           parent_fen: root.fen,
@@ -158,18 +141,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "That is a valid move, but not one that is due right now."
     end
 
-    test "shows an error for incorrect moves", %{conn: conn} do
+    test "shows an error for incorrect moves", %{conn: conn, scope: scope} do
       root = white_root_fixture()
-
-      {:ok, _} =
-        Repertoire.update_position(root, %{
-          next_review_at: DateTime.add(DateTime.utc_now(), -60, :second)
-        })
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due_child =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -185,19 +163,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "Incorrect move. Try again."
     end
 
-    test "skip moves on and scores as incorrect", %{conn: conn} do
+    test "skip moves on and scores as incorrect", %{conn: conn, scope: scope} do
       root = white_root_fixture()
-      starting_ease = root.ease_factor
-
-      {:ok, _} =
-        Repertoire.update_position(root, %{
-          next_review_at: DateTime.add(DateTime.utc_now(), -60, :second)
-        })
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       due_child =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -210,20 +182,20 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       render_click(view, "skip")
 
-      skipped = Repertoire.get_position_by_fen(due_child.fen, "white")
+      skipped = Repertoire.get_position_by_fen(scope, due_child.fen, "white")
 
       assert skipped.repetitions == 0
       assert skipped.interval_days == 1
       assert skipped.last_reviewed_at
       assert DateTime.compare(skipped.last_reviewed_at, now) in [:eq, :gt]
       assert DateTime.compare(skipped.next_review_at, now) == :gt
-      assert skipped.ease_factor < starting_ease
+      assert skipped.ease_factor < Repertoire.Position.default_ease_factor()
 
       html = render(view)
       assert html =~ "No positions due for review!"
     end
 
-    test "prompts to continue after a batch", %{conn: conn} do
+    test "prompts to continue after a batch", %{conn: conn, scope: scope} do
       Application.put_env(:bookmoves, :review_batch_size, 1)
       on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
 
@@ -231,7 +203,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due_one =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -240,7 +212,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       _due_two =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
           san: "d4",
           parent_fen: root.fen,
@@ -259,17 +231,15 @@ defmodule BookmovesWeb.RepertoireLiveTest do
   end
 
   describe "practice" do
-    test "does not update scheduling on correct moves", %{conn: conn} do
+    test "does not update scheduling on correct moves", %{conn: conn, scope: scope} do
       Application.put_env(:bookmoves, :review_batch_size, 1)
       on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
 
       root = white_root_fixture()
       now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-      {:ok, _} = Repertoire.update_position(root, %{last_reviewed_at: now})
-
       practice_pos =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -282,7 +252,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
 
-      unchanged = Repertoire.get_position_by_fen(practice_pos.fen, "white")
+      unchanged = Repertoire.get_position_by_fen(scope, practice_pos.fen, "white")
       assert unchanged.last_reviewed_at == practice_pos.last_reviewed_at
       assert unchanged.next_review_at == practice_pos.next_review_at
     end
@@ -297,14 +267,14 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert render(view) =~ "No positions available to practice yet."
     end
 
-    test "prompts to practice more moves after a batch", %{conn: conn} do
+    test "prompts to practice more moves after a batch", %{conn: conn, scope: scope} do
       Application.put_env(:bookmoves, :review_batch_size, 1)
       on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
 
       root = white_root_fixture()
 
       _practice_one =
-        position_fixture(%{
+        position_fixture(scope, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,

@@ -14,7 +14,6 @@ defmodule Bookmoves.Application do
        repos: Application.fetch_env!(:bookmoves, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:bookmoves, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Bookmoves.PubSub},
-      {Task, fn -> seed_positions() end},
       # Start a worker by calling: Bookmoves.Worker.start_link(arg)
       # {Bookmoves.Worker, arg},
       # Start to serve requests, typically the last entry
@@ -39,10 +38,5 @@ defmodule Bookmoves.Application do
   defp skip_migrations?() do
     # By default, sqlite migrations are run when using a release
     System.get_env("RELEASE_NAME") == nil
-  end
-
-  @spec seed_positions :: :ok
-  defp seed_positions do
-    Bookmoves.Repertoire.seed_root_positions()
   end
 end

@@ -4,19 +4,26 @@ defmodule Bookmoves.Repertoire do
   """
 
   import Ecto.Query, warn: false
-  alias Bookmoves.Repo
 
+  alias Bookmoves.Accounts.Scope
   alias Bookmoves.Repertoire.Position
+  alias Bookmoves.Repo
 
   @type color_side :: String.t()
   @type stats :: %{total: non_neg_integer(), due: non_neg_integer()}
+  @seconds_per_day 24 * 60 * 60
 
   @doc """
   Returns the list of positions for a given color side.
   """
-  @spec list_positions(color_side() | nil) :: [Position.persisted_t()]
-  def list_positions(color_side \\ nil) do
-    query = from p in Position, order_by: [asc: p.next_review_at, asc: p.id]
+  @spec list_positions(Scope.t(), color_side() | nil) :: [Position.persisted_t()]
+  def list_positions(%Scope{} = scope, color_side \\ nil) do
+    user_id = user_id_from_scope!(scope)
+
+    query =
+      from p in Position,
+        where: p.user_id == ^user_id,
+        order_by: [asc: p.next_review_at, asc: p.id]
 
     query =
       if color_side do
@@ -31,11 +38,13 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Returns positions that are due for review.
   """
-  @spec list_due_positions(DateTime.t()) :: [Position.persisted_t()]
-  def list_due_positions(now \\ DateTime.utc_now()) do
+  @spec list_due_positions(Scope.t(), DateTime.t()) :: [Position.persisted_t()]
+  def list_due_positions(%Scope{} = scope, now \\ DateTime.utc_now()) do
+    user_id = user_id_from_scope!(scope)
+
     Repo.all(
       from p in Position,
-        where: p.next_review_at <= ^now,
+        where: p.user_id == ^user_id and p.next_review_at <= ^now,
         order_by: [asc: p.next_review_at, asc: p.id]
     )
   end
@@ -46,44 +55,60 @@ defmodule Bookmoves.Repertoire do
   Options:
     * `:limit` - max number of positions to return
   """
-  # TODO: Scope by owner when multi-user support is added.
-  @spec list_due_positions_for_side(color_side(), DateTime.t(), keyword()) ::
+  @spec list_due_positions_for_side(Scope.t(), color_side(), DateTime.t(), keyword()) ::
           [Position.persisted_t()]
-  def list_due_positions_for_side(color_side, now \\ DateTime.utc_now(), opts \\ [])
+  def list_due_positions_for_side(
+        %Scope{} = scope,
+        color_side,
+        now \\ DateTime.utc_now(),
+        opts \\ []
+      )
       when color_side in ["white", "black"] do
     limit = Keyword.get(opts, :limit)
 
-    due_positions_query(color_side, now)
+    due_positions_query(scope, color_side, now)
     |> order_by([p], asc: p.next_review_at, asc: p.id)
     |> maybe_limit(limit)
     |> Repo.all()
   end
 
-  @spec get_next_due_position_for_side(color_side(), DateTime.t(), [pos_integer()]) ::
+  @spec get_next_due_position_for_side(Scope.t(), color_side(), DateTime.t(), [pos_integer()]) ::
           Position.persisted_t() | nil
-  def get_next_due_position_for_side(color_side, now \\ DateTime.utc_now(), exclude_ids \\ [])
+  def get_next_due_position_for_side(
+        %Scope{} = scope,
+        color_side,
+        now \\ DateTime.utc_now(),
+        exclude_ids \\ []
+      )
       when color_side in ["white", "black"] do
-    due_positions_query(color_side, now)
+    due_positions_query(scope, color_side, now)
     |> maybe_exclude_ids(exclude_ids)
     |> order_by([p], asc: p.next_review_at, asc: p.id)
     |> limit(1)
     |> Repo.one()
   end
 
-  @spec get_next_due_child_for_side(String.t(), color_side(), DateTime.t(), [pos_integer()]) ::
-          Position.persisted_t() | nil
+  @spec get_next_due_child_for_side(
+          Scope.t(),
+          String.t(),
+          color_side(),
+          DateTime.t(),
+          [pos_integer()]
+        ) :: Position.persisted_t() | nil
   def get_next_due_child_for_side(
+        %Scope{} = scope,
         parent_fen,
         color_side,
         now \\ DateTime.utc_now(),
         exclude_ids \\ []
       )
       when is_binary(parent_fen) and color_side in ["white", "black"] do
+    user_id = user_id_from_scope!(scope)
+
     from(p in Position,
       where:
-        p.parent_fen == ^parent_fen and p.color_side == ^color_side and
-          p.move_color == ^color_side and
-          p.next_review_at <= ^now
+        p.user_id == ^user_id and p.parent_fen == ^parent_fen and p.color_side == ^color_side and
+          p.move_color == ^color_side and p.next_review_at <= ^now
     )
     |> maybe_exclude_ids(exclude_ids)
     |> order_by([p], asc: p.next_review_at, asc: p.id)
@@ -94,12 +119,13 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets children of a position (moves in the repertoire from this position).
   """
-  # TODO: Scope by owner when multi-user support is added.
   @spec get_children(Position.persisted_t()) :: [Position.persisted_t()]
   def get_children(%Position{} = position) do
     Repo.all(
       from p in Position,
-        where: p.parent_fen == ^position.fen and p.color_side == ^position.color_side,
+        where:
+          p.user_id == ^position.user_id and p.parent_fen == ^position.fen and
+            p.color_side == ^position.color_side,
         order_by: [asc: p.san]
     )
   end
@@ -107,12 +133,14 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets children by fen and color side.
   """
-  # TODO: Scope by owner when multi-user support is added.
-  @spec get_children(String.t(), String.t()) :: [Position.persisted_t()]
-  def get_children(fen, color_side) when is_binary(fen) and is_binary(color_side) do
+  @spec get_children(Scope.t(), String.t(), String.t()) :: [Position.persisted_t()]
+  def get_children(%Scope{} = scope, fen, color_side)
+      when is_binary(fen) and is_binary(color_side) do
+    user_id = user_id_from_scope!(scope)
+
     Repo.all(
       from p in Position,
-        where: p.parent_fen == ^fen and p.color_side == ^color_side,
+        where: p.user_id == ^user_id and p.parent_fen == ^fen and p.color_side == ^color_side,
         order_by: [asc: p.san]
     )
   end
@@ -120,51 +148,59 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Gets the root position for a color side.
   """
-  @spec get_root(color_side()) :: Position.persisted_t() | nil
+  @spec get_root(color_side()) :: Position.t()
   def get_root(color_side) when color_side in ["white", "black"] do
-    Repo.one(
-      from p in Position,
-        where: is_nil(p.parent_fen) and p.color_side == ^color_side
-    )
+    %Position{fen: Position.starting_fen(), color_side: color_side, parent_fen: nil}
   end
 
   @doc """
   Gets a position by fen and color side.
   """
-  @spec get_position_by_fen(String.t(), String.t()) :: Position.persisted_t() | nil
-  def get_position_by_fen(fen, color_side) when is_binary(fen) and is_binary(color_side) do
-    Repo.get_by(Position, fen: fen, color_side: color_side)
+  @spec get_position_by_fen(Scope.t(), String.t(), String.t()) :: Position.persisted_t() | nil
+  def get_position_by_fen(%Scope{} = scope, fen, color_side)
+      when is_binary(fen) and is_binary(color_side) do
+    Repo.get_by(Position, user_id: user_id_from_scope!(scope), fen: fen, color_side: color_side)
   end
 
   @doc """
-  Gets a single position.
+  Gets a single position owned by the current user.
   """
-  # TODO: Scope by owner when multi-user support is added.
-  @spec get_position!(pos_integer()) :: Position.persisted_t()
-  def get_position!(id), do: Repo.get!(Position, id)
+  @spec get_position!(Scope.t(), pos_integer() | String.t()) :: Position.persisted_t()
+  def get_position!(%Scope{} = scope, id) when is_binary(id) do
+    id
+    |> String.to_integer()
+    |> then(&get_position!(scope, &1))
+  end
+
+  def get_position!(%Scope{} = scope, id) when is_integer(id) do
+    user_id = user_id_from_scope!(scope)
+
+    Repo.one!(from p in Position, where: p.id == ^id and p.user_id == ^user_id)
+  end
 
   @doc """
   Creates a position.
   """
-  # TODO: Scope by owner when multi-user support is added.
-  @spec create_position(Position.attrs()) ::
+  @spec create_position(Scope.t(), Position.attrs()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
-  def create_position(attrs) do
+  def create_position(%Scope{} = scope, attrs) do
+    user_id = user_id_from_scope!(scope)
+
     %Position{}
     |> Position.changeset(attrs)
+    |> Ecto.Changeset.put_change(:user_id, user_id)
     |> Repo.insert()
   end
 
   @doc """
-  Creates a position or returns existing if fen + color_side already exists.
+  Creates a position or returns existing if user + fen + color_side already exists.
   """
-  # TODO: Scope by owner when multi-user support is added.
-  @spec create_position_if_not_exists(Position.attrs()) ::
+  @spec create_position_if_not_exists(Scope.t(), Position.attrs()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
-  def create_position_if_not_exists(attrs) do
-    case get_position_by_fen(attrs[:fen], attrs[:color_side]) do
+  def create_position_if_not_exists(%Scope{} = scope, attrs) do
+    case get_position_by_fen(scope, attrs[:fen], attrs[:color_side]) do
       nil ->
-        create_position(attrs)
+        create_position(scope, attrs)
 
       existing ->
         {:ok, existing}
@@ -174,15 +210,20 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Fetches the position chain from root to current.
   """
-  @spec get_position_chain(String.t(), String.t()) :: [Position.persisted_t()]
-  def get_position_chain(fen, color_side) when is_binary(fen) and is_binary(color_side) do
+  @spec get_position_chain(Scope.t(), String.t(), String.t()) :: [Position.persisted_t()]
+  def get_position_chain(%Scope{} = scope, fen, color_side)
+      when is_binary(fen) and is_binary(color_side) do
+    user_id = user_id_from_scope!(scope)
+
     chain_columns = [
       :id,
+      :user_id,
       :fen,
       :san,
       :parent_fen,
       :comment,
       :color_side,
+      :move_color,
       :next_review_at,
       :last_reviewed_at,
       :interval_days,
@@ -195,11 +236,13 @@ defmodule Bookmoves.Repertoire do
     sql = """
     WITH RECURSIVE chain(
       id,
+      user_id,
       fen,
       san,
       parent_fen,
       comment,
       color_side,
+      move_color,
       next_review_at,
       last_reviewed_at,
       interval_days,
@@ -211,11 +254,13 @@ defmodule Bookmoves.Repertoire do
     ) AS (
       SELECT
         id,
+        user_id,
         fen,
         san,
         parent_fen,
         comment,
         color_side,
+        move_color,
         next_review_at,
         last_reviewed_at,
         interval_days,
@@ -225,17 +270,19 @@ defmodule Bookmoves.Repertoire do
         updated_at,
         0
       FROM positions
-      WHERE fen = ? AND color_side = ?
+      WHERE user_id = ? AND fen = ? AND color_side = ?
 
       UNION ALL
 
       SELECT
         p.id,
+        p.user_id,
         p.fen,
         p.san,
         p.parent_fen,
         p.comment,
         p.color_side,
+        p.move_color,
         p.next_review_at,
         p.last_reviewed_at,
         p.interval_days,
@@ -246,15 +293,17 @@ defmodule Bookmoves.Repertoire do
         c.depth + 1
       FROM positions p
       JOIN chain c
-        ON p.fen = c.parent_fen AND p.color_side = c.color_side
+        ON p.user_id = c.user_id AND p.fen = c.parent_fen AND p.color_side = c.color_side
     )
     SELECT
       id,
+      user_id,
       fen,
       san,
       parent_fen,
       comment,
       color_side,
+      move_color,
       next_review_at,
       last_reviewed_at,
       interval_days,
@@ -266,7 +315,7 @@ defmodule Bookmoves.Repertoire do
     ORDER BY depth DESC
     """
 
-    result = Ecto.Adapters.SQL.query!(Repo, sql, [fen, color_side])
+    result = Ecto.Adapters.SQL.query!(Repo, sql, [user_id, fen, color_side])
 
     Enum.map(result.rows, fn row ->
       chain_columns
@@ -279,16 +328,21 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Creates multiple positions from a list of attribute maps.
   """
-  # TODO: Scope by owner when multi-user support is added.
-  @spec create_positions([Position.attrs()]) ::
-          {:ok, map()}
-          | {:error, term(), Ecto.Changeset.t(), map()}
-  def create_positions(attrs_list) do
+  @spec create_positions(Scope.t(), [Position.attrs()]) ::
+          {:ok, map()} | {:error, term(), Ecto.Changeset.t(), map()}
+  def create_positions(%Scope{} = scope, attrs_list) do
+    user_id = user_id_from_scope!(scope)
+
     multi =
       attrs_list
       |> Enum.with_index()
       |> Enum.reduce(Ecto.Multi.new(), fn {attrs, index}, multi_acc ->
-        Ecto.Multi.insert(multi_acc, {:position, index}, Position.changeset(%Position{}, attrs))
+        changeset =
+          %Position{}
+          |> Position.changeset(attrs)
+          |> Ecto.Changeset.put_change(:user_id, user_id)
+
+        Ecto.Multi.insert(multi_acc, {:position, index}, changeset)
       end)
 
     Repo.transact(multi)
@@ -297,7 +351,6 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Updates a position.
   """
-  # TODO: Scope by owner when multi-user support is added.
   @spec update_position(Position.persisted_t(), map()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def update_position(%Position{} = position, attrs) do
@@ -309,11 +362,12 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Updates a position comment without loading the record.
   """
-  # TODO: Scope by owner when multi-user support is added.
-  @spec update_position_comment(pos_integer(), String.t()) :: :ok | :error
-  def update_position_comment(id, comment) when is_integer(id) do
+  @spec update_position_comment(Scope.t(), pos_integer(), String.t()) :: :ok | :error
+  def update_position_comment(%Scope{} = scope, id, comment) when is_integer(id) do
+    user_id = user_id_from_scope!(scope)
+
     {count, _} =
-      from(p in Position, where: p.id == ^id)
+      from(p in Position, where: p.id == ^id and p.user_id == ^user_id)
       |> Repo.update_all(set: [comment: comment])
 
     if count == 1, do: :ok, else: :error
@@ -322,7 +376,6 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Deletes a position.
   """
-  # TODO: Scope by owner when multi-user support is added.
   @spec delete_position(Position.persisted_t()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def delete_position(%Position{} = position) do
@@ -346,7 +399,7 @@ defmodule Bookmoves.Repertoire do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     reps = position.repetitions || 0
     interval = position.interval_days || 1
-    ease = position.ease_factor || 2.5
+    ease = position.ease_factor || Position.default_ease_factor()
 
     new_interval =
       cond do
@@ -355,11 +408,11 @@ defmodule Bookmoves.Repertoire do
         true -> max(1, round(interval * ease))
       end
 
-    new_ease = min(2.5, ease + 0.1)
+    new_ease = min(Position.default_ease_factor(), ease + 0.1)
 
     attrs = %{
       last_reviewed_at: now,
-      next_review_at: DateTime.add(now, new_interval * 86_400, :second),
+      next_review_at: add_days(now, new_interval),
       repetitions: reps + 1,
       interval_days: new_interval,
       ease_factor: new_ease
@@ -372,11 +425,11 @@ defmodule Bookmoves.Repertoire do
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def review_position(%Position{} = position, correct: false) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
-    ease = position.ease_factor || 2.5
+    ease = position.ease_factor || Position.default_ease_factor()
 
     attrs = %{
       last_reviewed_at: now,
-      next_review_at: DateTime.add(now, 1 * 86_400, :second),
+      next_review_at: add_days(now, 1),
       repetitions: 0,
       interval_days: 1,
       ease_factor: max(1.3, ease - 0.2)
@@ -388,10 +441,18 @@ defmodule Bookmoves.Repertoire do
   @doc """
   Returns stats for a color side.
   """
-  @spec get_stats(String.t()) :: stats()
-  def get_stats(color_side) do
-    total = Repo.one(from p in Position, where: p.color_side == ^color_side, select: count()) || 0
-    due = count_due_positions_for_side(color_side)
+  @spec get_stats(Scope.t(), String.t()) :: stats()
+  def get_stats(%Scope{} = scope, color_side) do
+    user_id = user_id_from_scope!(scope)
+
+    total =
+      Repo.one(
+        from p in Position,
+          where: p.user_id == ^user_id and p.color_side == ^color_side,
+          select: count()
+      ) || 0
+
+    due = count_due_positions_for_side(scope, color_side)
 
     %{
       total: total,
@@ -406,49 +467,58 @@ defmodule Bookmoves.Repertoire do
     * `:limit` - max number of positions to return
     * `:exclude_ids` - position IDs to exclude
   """
-  @spec list_random_positions_for_side(color_side(), keyword()) :: [Position.persisted_t()]
-  def list_random_positions_for_side(color_side, opts \\ [])
+  @spec list_random_positions_for_side(Scope.t(), color_side(), keyword()) :: [
+          Position.persisted_t()
+        ]
+  def list_random_positions_for_side(%Scope{} = scope, color_side, opts \\ [])
       when color_side in ["white", "black"] do
     limit = Keyword.get(opts, :limit, 20)
     exclude_ids = Keyword.get(opts, :exclude_ids, [])
 
-    practice_positions_query(color_side)
+    practice_positions_query(scope, color_side)
     |> maybe_exclude_ids(exclude_ids)
     |> order_by([p], fragment("RANDOM()"))
     |> limit(^limit)
     |> Repo.all()
   end
 
-  @spec count_practice_positions_for_side(color_side()) :: non_neg_integer()
-  def count_practice_positions_for_side(color_side) when color_side in ["white", "black"] do
-    practice_positions_query(color_side)
-    |> select([p], count(p.id))
-    |> Repo.one()
-    |> Kernel.||(0)
-  end
-
-  @spec count_due_positions_for_side(color_side(), DateTime.t()) :: non_neg_integer()
-  # TODO: Scope by owner when multi-user support is added.
-  def count_due_positions_for_side(color_side, now \\ DateTime.utc_now())
+  @spec count_practice_positions_for_side(Scope.t(), color_side()) :: non_neg_integer()
+  def count_practice_positions_for_side(%Scope{} = scope, color_side)
       when color_side in ["white", "black"] do
-    due_positions_query(color_side, now)
+    practice_positions_query(scope, color_side)
     |> select([p], count(p.id))
     |> Repo.one()
     |> Kernel.||(0)
   end
 
-  @spec due_positions_query(color_side(), DateTime.t()) :: Ecto.Query.t()
-  defp due_positions_query(color_side, now) do
+  @spec count_due_positions_for_side(Scope.t(), color_side(), DateTime.t()) :: non_neg_integer()
+  def count_due_positions_for_side(%Scope{} = scope, color_side, now \\ DateTime.utc_now())
+      when color_side in ["white", "black"] do
+    due_positions_query(scope, color_side, now)
+    |> select([p], count(p.id))
+    |> Repo.one()
+    |> Kernel.||(0)
+  end
+
+  @spec due_positions_query(Scope.t(), color_side(), DateTime.t()) :: Ecto.Query.t()
+  defp due_positions_query(%Scope{} = scope, color_side, now) do
+    user_id = user_id_from_scope!(scope)
+
     from(p in Position,
       where:
-        p.color_side == ^color_side and p.move_color == ^color_side and p.next_review_at <= ^now
+        p.user_id == ^user_id and p.color_side == ^color_side and p.move_color == ^color_side and
+          p.next_review_at <= ^now
     )
   end
 
-  defp practice_positions_query(color_side) do
+  @spec practice_positions_query(Scope.t(), color_side()) :: Ecto.Query.t()
+  defp practice_positions_query(%Scope{} = scope, color_side) do
+    user_id = user_id_from_scope!(scope)
+
     from(p in Position,
       where:
-        p.color_side == ^color_side and p.move_color == ^color_side and not is_nil(p.parent_fen)
+        p.user_id == ^user_id and p.color_side == ^color_side and p.move_color == ^color_side and
+          not is_nil(p.parent_fen)
     )
   end
 
@@ -469,27 +539,6 @@ defmodule Bookmoves.Repertoire do
   end
 
   @doc """
-  Seeds the root positions if they don't exist.
-  """
-  @spec seed_root_positions() :: :ok
-  def seed_root_positions do
-    roots = [
-      %{fen: Position.starting_fen(), color_side: "white", san: nil, parent_fen: nil},
-      %{fen: Position.starting_fen(), color_side: "black", san: nil, parent_fen: nil}
-    ]
-
-    Enum.each(roots, fn attrs ->
-      case get_position_by_fen(attrs[:fen], attrs[:color_side]) do
-        nil ->
-          create_position(attrs)
-
-        _ ->
-          :ok
-      end
-    end)
-  end
-
-  @doc """
   Formats a list of SAN moves with move numbers.
   """
   @spec format_notation_with_numbers([String.t()]) :: String.t()
@@ -504,5 +553,17 @@ defmodule Bookmoves.Repertoire do
     |> elem(1)
     |> Enum.reverse()
     |> Enum.join(" ")
+  end
+
+  @spec user_id_from_scope!(Scope.t()) :: pos_integer()
+  defp user_id_from_scope!(%Scope{user: %{id: user_id}}) when is_integer(user_id), do: user_id
+
+  defp user_id_from_scope!(_scope) do
+    raise ArgumentError, "expected authenticated scope with user id"
+  end
+
+  @spec add_days(DateTime.t(), pos_integer()) :: DateTime.t()
+  defp add_days(%DateTime{} = datetime, days) when is_integer(days) and days > 0 do
+    DateTime.add(datetime, days * @seconds_per_day, :second)
   end
 end

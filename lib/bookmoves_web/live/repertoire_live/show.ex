@@ -46,15 +46,16 @@ defmodule BookmovesWeb.RepertoireLive.Show do
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    position = Repertoire.get_position!(id)
+    position = Repertoire.get_position!(socket.assigns.current_scope, id)
     {:ok, _} = Repertoire.delete_position(position)
     {:noreply, load_repertoire(socket, socket.assigns.side)}
   end
 
   @spec load_repertoire(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
   defp load_repertoire(socket, side) do
+    scope = socket.assigns.current_scope
     root = Repertoire.get_root(side)
-    stats = Repertoire.get_stats(side)
+    stats = Repertoire.get_stats(scope, side)
 
     assign(socket,
       page_title: "#{String.upcase(side)} Repertoire",

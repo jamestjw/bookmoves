@@ -77,10 +77,12 @@ defmodule BookmovesWeb.RepertoireLive.Index do
 
   @spec load_stats(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
   defp load_stats(socket) do
+    scope = socket.assigns.current_scope
+
     assign(socket,
       page_title: "Your Repertoire",
-      white_stats: Repertoire.get_stats("white"),
-      black_stats: Repertoire.get_stats("black")
+      white_stats: Repertoire.get_stats(scope, "white"),
+      black_stats: Repertoire.get_stats(scope, "black")
     )
   end
 end

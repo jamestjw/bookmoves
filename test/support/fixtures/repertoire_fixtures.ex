@@ -6,25 +6,19 @@ defmodule Bookmoves.RepertoireFixtures do
 
   alias Bookmoves.Repertoire
   alias Bookmoves.Repertoire.Position
+  alias Bookmoves.AccountsFixtures
 
   @doc """
   Generate a root position for white.
   """
   def white_root_fixture do
-    {:ok, position} =
-      %{
-        fen: Position.starting_fen(),
-        color_side: "white"
-      }
-      |> Repertoire.create_position_if_not_exists()
-
-    position
+    Repertoire.get_root("white")
   end
 
   @doc """
   Generate a position with a move.
   """
-  def position_fixture(attrs \\ %{}) do
+  def position_fixture(scope \\ AccountsFixtures.user_scope_fixture(), attrs \\ %{}) do
     {:ok, position} =
       attrs
       |> Enum.into(%{
@@ -33,7 +27,7 @@ defmodule Bookmoves.RepertoireFixtures do
         parent_fen: Position.starting_fen(),
         color_side: "white"
       })
-      |> Repertoire.create_position()
+      |> then(&Repertoire.create_position(scope, &1))
 
     position
   end

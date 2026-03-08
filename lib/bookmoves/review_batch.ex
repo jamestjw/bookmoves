@@ -5,29 +5,36 @@ defmodule Bookmoves.ReviewBatch do
 
   alias Bookmoves.Repertoire
   alias Bookmoves.Repertoire.Position
+  alias Bookmoves.Accounts.Scope
 
   @type chain :: [Position.persisted_t()]
 
-  @spec build_due_chains_batch(Repertoire.color_side(), keyword()) :: [chain()]
-  def build_due_chains_batch(side, opts \\ []) when side in ["white", "black"] do
+  @spec build_due_chains_batch(Scope.t(), Repertoire.color_side(), keyword()) :: [chain()]
+  def build_due_chains_batch(%Scope{} = scope, side, opts \\ [])
+      when side in ["white", "black"] do
     now = Keyword.get(opts, :now, DateTime.utc_now())
     batch_size = Keyword.get(opts, :batch_size, 20)
     chain_limit = Keyword.get(opts, :chain_limit, 3)
 
-    build_due_chains_batch(side, now, batch_size, chain_limit, MapSet.new(), [], 0)
+    build_due_chains_batch(scope, side, now, batch_size, chain_limit, MapSet.new(), [], 0)
   end
 
-  @spec build_practice_chains_batch(Repertoire.color_side(), keyword()) :: [chain()]
-  def build_practice_chains_batch(side, opts \\ []) when side in ["white", "black"] do
+  @spec build_practice_chains_batch(Scope.t(), Repertoire.color_side(), keyword()) :: [chain()]
+  def build_practice_chains_batch(%Scope{} = scope, side, opts \\ [])
+      when side in ["white", "black"] do
     batch_size = Keyword.get(opts, :batch_size, 20)
     exclude_ids = Keyword.get(opts, :exclude_ids, [])
 
-    side
-    |> Repertoire.list_random_positions_for_side(limit: batch_size, exclude_ids: exclude_ids)
+    scope
+    |> Repertoire.list_random_positions_for_side(side,
+      limit: batch_size,
+      exclude_ids: exclude_ids
+    )
     |> Enum.map(&[&1])
   end
 
   @spec build_due_chains_batch(
+          Scope.t(),
           String.t(),
           DateTime.t(),
           non_neg_integer(),
@@ -37,6 +44,7 @@ defmodule Bookmoves.ReviewBatch do
           non_neg_integer()
         ) :: [chain()]
   defp build_due_chains_batch(
+         scope,
          side,
          now,
          batch_size,
@@ -49,7 +57,7 @@ defmodule Bookmoves.ReviewBatch do
       chains
     else
       next_position =
-        Repertoire.get_next_due_position_for_side(side, now, MapSet.to_list(selected_ids))
+        Repertoire.get_next_due_position_for_side(scope, side, now, MapSet.to_list(selected_ids))
 
       case next_position do
         nil ->
@@ -58,6 +66,7 @@ defmodule Bookmoves.ReviewBatch do
         %Position{} = position ->
           {chain, selected_ids, total_count} =
             build_chain(
+              scope,
               position,
               side,
               now,
@@ -69,6 +78,7 @@ defmodule Bookmoves.ReviewBatch do
             )
 
           build_due_chains_batch(
+            scope,
             side,
             now,
             batch_size,
@@ -82,6 +92,7 @@ defmodule Bookmoves.ReviewBatch do
   end
 
   @spec build_chain(
+          Scope.t(),
           Position.persisted_t(),
           String.t(),
           DateTime.t(),
@@ -92,6 +103,7 @@ defmodule Bookmoves.ReviewBatch do
           non_neg_integer()
         ) :: {[Position.persisted_t()], MapSet.t(pos_integer()), non_neg_integer()}
   defp build_chain(
+         scope,
          %Position{} = position,
          side,
          now,
@@ -113,6 +125,7 @@ defmodule Bookmoves.ReviewBatch do
       next_due =
         if is_binary(opponent_san) do
           Repertoire.get_next_due_child_for_side(
+            scope,
             opponent_move.fen,
             side,
             now,
@@ -127,7 +140,17 @@ defmodule Bookmoves.ReviewBatch do
           {acc, selected_ids, total_count}
 
         %Position{} = child ->
-          build_chain(child, side, now, selected_ids, acc, total_count, batch_size, remaining - 1)
+          build_chain(
+            scope,
+            child,
+            side,
+            now,
+            selected_ids,
+            acc,
+            total_count,
+            batch_size,
+            remaining - 1
+          )
       end
     end
   end

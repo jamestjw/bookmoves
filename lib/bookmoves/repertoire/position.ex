@@ -3,9 +3,11 @@ defmodule Bookmoves.Repertoire.Position do
   import Ecto.Changeset
 
   @starting_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+  @default_ease_factor 2.5
 
   @type t :: %__MODULE__{
           id: pos_integer() | nil,
+          user_id: pos_integer() | nil,
           fen: String.t() | nil,
           san: String.t() | nil,
           parent_fen: String.t() | nil,
@@ -37,6 +39,7 @@ defmodule Bookmoves.Repertoire.Position do
 
   @type persisted_t :: %__MODULE__{
           id: pos_integer(),
+          user_id: pos_integer() | nil,
           fen: String.t(),
           san: String.t() | nil,
           parent_fen: String.t() | nil,
@@ -55,7 +58,11 @@ defmodule Bookmoves.Repertoire.Position do
   @spec starting_fen() :: String.t()
   def starting_fen, do: @starting_fen
 
+  @spec default_ease_factor() :: float()
+  def default_ease_factor, do: @default_ease_factor
+
   schema "positions" do
+    belongs_to :user, Bookmoves.Accounts.User
     field :fen, :string
     field :san, :string
     field :parent_fen, :string
@@ -95,7 +102,10 @@ defmodule Bookmoves.Repertoire.Position do
     |> validate_number(:interval_days, greater_than_or_equal_to: 1)
     |> validate_number(:ease_factor, greater_than_or_equal_to: 1.3)
     |> validate_number(:repetitions, greater_than_or_equal_to: 0)
-    |> unique_constraint([:fen, :color_side], name: :positions_fen_color_side_index)
+    |> assoc_constraint(:user)
+    |> unique_constraint([:user_id, :fen, :color_side],
+      name: :positions_user_fen_color_side_index
+    )
   end
 
   @spec put_defaults(Ecto.Changeset.t()) :: Ecto.Changeset.t()
@@ -105,7 +115,7 @@ defmodule Bookmoves.Repertoire.Position do
     changeset
     |> put_change_if_missing(:next_review_at, now)
     |> put_change_if_missing(:interval_days, 1)
-    |> put_change_if_missing(:ease_factor, 2.5)
+    |> put_change_if_missing(:ease_factor, default_ease_factor())
     |> put_change_if_missing(:repetitions, 0)
     |> put_move_color()
   end

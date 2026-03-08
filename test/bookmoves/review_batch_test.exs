@@ -1,23 +1,19 @@
 defmodule Bookmoves.ReviewBatchTest do
   use Bookmoves.DataCase, async: false
 
+  import Bookmoves.AccountsFixtures
+
   alias Bookmoves.Repertoire
-  alias Bookmoves.Repertoire.Position
   alias Bookmoves.ReviewBatch
 
   test "builds linear chains with chain limit" do
-    root =
-      %{
-        fen: Position.starting_fen(),
-        color_side: "white"
-      }
-      |> Repertoire.create_position_if_not_exists()
-      |> elem(1)
+    scope = user_scope_fixture()
+    root = Repertoire.get_root("white")
 
     past = DateTime.add(DateTime.utc_now(), -60, :second)
 
     {:ok, user_one} =
-      Repertoire.create_position(%{
+      Repertoire.create_position(scope, %{
         fen: "fen-user-1",
         san: "e4",
         parent_fen: root.fen,
@@ -27,7 +23,7 @@ defmodule Bookmoves.ReviewBatchTest do
       })
 
     {:ok, _opp_one} =
-      Repertoire.create_position(%{
+      Repertoire.create_position(scope, %{
         fen: "fen-opp-1",
         san: "e5",
         parent_fen: user_one.fen,
@@ -36,7 +32,7 @@ defmodule Bookmoves.ReviewBatchTest do
       })
 
     {:ok, user_two} =
-      Repertoire.create_position(%{
+      Repertoire.create_position(scope, %{
         fen: "fen-user-2",
         san: "Nf3",
         parent_fen: "fen-opp-1",
@@ -46,7 +42,7 @@ defmodule Bookmoves.ReviewBatchTest do
       })
 
     {:ok, _opp_two} =
-      Repertoire.create_position(%{
+      Repertoire.create_position(scope, %{
         fen: "fen-opp-2",
         san: "Nc6",
         parent_fen: user_two.fen,
@@ -55,7 +51,7 @@ defmodule Bookmoves.ReviewBatchTest do
       })
 
     {:ok, user_three} =
-      Repertoire.create_position(%{
+      Repertoire.create_position(scope, %{
         fen: "fen-user-3",
         san: "Bb5",
         parent_fen: "fen-opp-2",
@@ -65,7 +61,7 @@ defmodule Bookmoves.ReviewBatchTest do
       })
 
     {:ok, sibling_due} =
-      Repertoire.create_position(%{
+      Repertoire.create_position(scope, %{
         fen: "fen-user-sibling",
         san: "d4",
         parent_fen: root.fen,
@@ -75,7 +71,7 @@ defmodule Bookmoves.ReviewBatchTest do
       })
 
     chains =
-      ReviewBatch.build_due_chains_batch("white",
+      ReviewBatch.build_due_chains_batch(scope, "white",
         batch_size: 10,
         chain_limit: 3,
         now: DateTime.utc_now()

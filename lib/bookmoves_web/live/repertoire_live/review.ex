@@ -202,8 +202,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         target_sans = Enum.map(due_targets, &String.upcase(&1.san || ""))
 
         all_children_sans =
-          parent_position
-          |> Repertoire.get_children()
+          Repertoire.get_children(
+            socket.assigns.current_scope,
+            parent_position.fen,
+            socket.assigns.side
+          )
           |> Enum.map(&String.upcase(&1.san || ""))
 
         cond do
@@ -320,15 +323,18 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           exclude_ids = MapSet.to_list(practice_seen_ids)
 
           practice_chains =
-            ReviewBatch.build_practice_chains_batch(side,
+            ReviewBatch.build_practice_chains_batch(socket.assigns.current_scope, side,
               batch_size: batch_size(),
               exclude_ids: exclude_ids
             )
 
           {practice_chains, practice_seen_ids} =
             if practice_chains == [] and exclude_ids != [] do
-              {ReviewBatch.build_practice_chains_batch(side, batch_size: batch_size()),
-               MapSet.new()}
+              {ReviewBatch.build_practice_chains_batch(
+                 socket.assigns.current_scope,
+                 side,
+                 batch_size: batch_size()
+               ), MapSet.new()}
             else
               {practice_chains, practice_seen_ids}
             end
@@ -342,7 +348,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           {practice_chains, new_seen_ids}
 
         :due ->
-          {ReviewBatch.build_due_chains_batch(side,
+          {ReviewBatch.build_due_chains_batch(socket.assigns.current_scope, side,
              batch_size: batch_size(),
              chain_limit: chain_limit()
            ), MapSet.new()}
@@ -358,7 +364,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             remaining_due_count: 0,
             review_mode: review_mode,
             empty_state_message: empty_state_message(review_mode),
-            practice_available?: practice_available?(side),
+            practice_available?: practice_available?(socket.assigns.current_scope, side),
             practice_seen_ids: practice_seen_ids
           )
 
@@ -387,16 +393,15 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           remaining_due_count: 0,
           review_mode: review_mode,
           empty_state_message: empty_state_message(review_mode),
-          practice_available?: practice_available?(side),
+          practice_available?: practice_available?(socket.assigns.current_scope, side),
           practice_seen_ids: practice_seen_ids
         )
     end
   end
 
-  @spec build_notation(Position.persisted_t(), String.t()) :: String.t()
-  defp build_notation(%Position{} = position, side) do
-    position.fen
-    |> Repertoire.get_position_chain(side)
+  @spec build_notation(Position.t(), String.t(), Bookmoves.Accounts.Scope.t()) :: String.t()
+  defp build_notation(%Position{} = position, side, scope) do
+    Repertoire.get_position_chain(scope, position.fen, side)
     |> Enum.map(& &1.san)
     |> Enum.reject(&is_nil/1)
     |> Repertoire.format_notation_with_numbers()
@@ -461,7 +466,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         ]) ::
           Phoenix.LiveView.Socket.t()
   defp start_chain(socket, side, remaining_chains, [%Position{} = due_position | rest_chain]) do
-    case Repertoire.get_position_by_fen(due_position.parent_fen, side) do
+    case parent_position(socket.assigns.current_scope, due_position.parent_fen, side) do
       %Position{} = parent ->
         hint_sans =
           [due_position]
@@ -481,7 +486,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             show_result: false,
             last_result: nil,
             attempted_incorrect: false,
-            move_notation: build_notation(parent, side),
+            move_notation: build_notation(parent, side, socket.assigns.current_scope),
             hint_sans: hint_sans,
             batch_complete?: false
           )
@@ -506,7 +511,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   defp advance_chain_step(socket, %Position{} = next_due, rest_chain) do
     %{side: side, remaining_chains: _remaining_chains} = socket.assigns
 
-    case Repertoire.get_position_by_fen(next_due.parent_fen, side) do
+    case parent_position(socket.assigns.current_scope, next_due.parent_fen, side) do
       %Position{} = parent ->
         hint_sans =
           [next_due]
@@ -525,7 +530,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             show_result: false,
             last_result: nil,
             attempted_incorrect: false,
-            move_notation: build_notation(parent, side),
+            move_notation: build_notation(parent, side, socket.assigns.current_scope),
             hint_sans: hint_sans,
             batch_complete?: false
           )
@@ -557,7 +562,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         )
 
       :due ->
-        remaining_due_count = Repertoire.count_due_positions_for_side(side)
+        remaining_due_count =
+          Repertoire.count_due_positions_for_side(socket.assigns.current_scope, side)
 
         socket =
           assign(socket,
@@ -627,9 +633,19 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     "No positions due for review! Come back later or add more moves to your repertoire."
   end
 
-  @spec practice_available?(String.t()) :: boolean()
-  defp practice_available?(side) do
-    Repertoire.count_practice_positions_for_side(side) > 0
+  @spec practice_available?(Bookmoves.Accounts.Scope.t(), String.t()) :: boolean()
+  defp practice_available?(scope, side) do
+    Repertoire.count_practice_positions_for_side(scope, side) > 0
+  end
+
+  @spec parent_position(Bookmoves.Accounts.Scope.t(), String.t(), String.t()) ::
+          Position.t() | nil
+  defp parent_position(scope, parent_fen, side) do
+    if parent_fen == Position.starting_fen() do
+      Repertoire.get_root(side)
+    else
+      Repertoire.get_position_by_fen(scope, parent_fen, side)
+    end
   end
 
   @spec pop_hint_san([String.t()], String.t()) :: {[String.t()], String.t() | nil}
