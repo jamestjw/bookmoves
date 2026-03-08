@@ -332,4 +332,35 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert has_element?(view, "#review-board")
     end
   end
+
+  describe "add" do
+    test "imports PGN from uploaded file", %{conn: conn, scope: scope} do
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/add")
+
+      upload =
+        file_input(view, "#pgn-import-form", :pgn_file, [
+          %{
+            name: "line.pgn",
+            content: "[Event \"Import\"]\n\n1. e4 e5",
+            type: "application/x-chess-pgn"
+          }
+        ])
+
+      _ = render_upload(upload, "line.pgn")
+
+      view
+      |> form("#pgn-import-form")
+      |> render_submit(%{})
+
+      assert Repertoire.get_position_by_fen(
+               scope,
+               repertoire.id,
+               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+             )
+
+      assert has_element?(view, "#pgn-import-form")
+    end
+  end
 end

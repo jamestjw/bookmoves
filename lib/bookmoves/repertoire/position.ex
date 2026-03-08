@@ -101,8 +101,8 @@ defmodule Bookmoves.Repertoire.Position do
     |> validate_number(:repetitions, greater_than_or_equal_to: 0)
     |> assoc_constraint(:user)
     |> assoc_constraint(:repertoire)
-    |> unique_constraint([:user_id, :repertoire_id, :fen],
-      name: :positions_user_repertoire_fen_index
+    |> unique_constraint([:user_id, :repertoire_id, :parent_fen, :san, :fen],
+      name: :positions_user_repertoire_parent_san_fen_index
     )
   end
 

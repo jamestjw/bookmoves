@@ -7,6 +7,7 @@ defmodule Bookmoves.Repertoire do
 
   alias Bookmoves.Accounts.Scope
   alias Bookmoves.Repertoire.Position
+  alias Bookmoves.Repertoire.PgnImport
   alias Bookmoves.Repertoire.Repertoire, as: UserRepertoire
   alias Bookmoves.Repo
 
@@ -206,10 +207,11 @@ defmodule Bookmoves.Repertoire do
   def get_position_by_fen(%Scope{} = scope, repertoire_id, fen) when is_binary(fen) do
     {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
 
-    Repo.get_by(Position,
-      user_id: user_id,
-      repertoire_id: repertoire_id,
-      fen: fen
+    Repo.one(
+      from p in Position,
+        where: p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and p.fen == ^fen,
+        order_by: [asc: p.id],
+        limit: 1
     )
   end
 
@@ -245,7 +247,13 @@ defmodule Bookmoves.Repertoire do
   @spec create_position_if_not_exists(Scope.t(), pos_integer(), Position.attrs()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position_if_not_exists(%Scope{} = scope, repertoire_id, attrs) do
-    case get_position_by_fen(scope, repertoire_id, attrs[:fen]) do
+    case get_position_by_move_key(
+           scope,
+           repertoire_id,
+           attrs[:parent_fen],
+           attrs[:san],
+           attrs[:fen]
+         ) do
       nil ->
         create_position(scope, repertoire_id, attrs)
 
@@ -253,6 +261,28 @@ defmodule Bookmoves.Repertoire do
         {:ok, existing}
     end
   end
+
+  @spec get_position_by_move_key(
+          Scope.t(),
+          pos_integer(),
+          String.t() | nil,
+          String.t() | nil,
+          String.t() | nil
+        ) :: Position.persisted_t() | nil
+  defp get_position_by_move_key(%Scope{} = scope, repertoire_id, parent_fen, san, fen)
+       when is_binary(parent_fen) and is_binary(san) and is_binary(fen) do
+    {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
+
+    Repo.get_by(Position,
+      user_id: user_id,
+      repertoire_id: repertoire_id,
+      parent_fen: parent_fen,
+      san: san,
+      fen: fen
+    )
+  end
+
+  defp get_position_by_move_key(_scope, _repertoire_id, _parent_fen, _san, _fen), do: nil
 
   @spec get_position_chain(Scope.t(), pos_integer(), String.t()) :: [Position.persisted_t()]
   def get_position_chain(%Scope{} = scope, repertoire_id, fen) when is_binary(fen) do
@@ -388,6 +418,21 @@ defmodule Bookmoves.Repertoire do
       end)
 
     Repo.transact(multi)
+  end
+
+  @type import_result :: %{
+          inserted: non_neg_integer(),
+          skipped: non_neg_integer(),
+          total: non_neg_integer()
+        }
+
+  @spec import_pgn(Scope.t(), pos_integer(), String.t()) ::
+          {:ok, import_result()}
+          | {:error, Ecto.Changeset.t() | :empty_pgn | :invalid_pgn | :unsupported_start_position}
+  def import_pgn(%Scope{} = scope, repertoire_id, pgn_text) when is_binary(pgn_text) do
+    with {:ok, attrs_list} <- PgnImport.parse_to_attrs(pgn_text) do
+      import_positions(scope, repertoire_id, attrs_list)
+    end
   end
 
   @spec update_position(Position.persisted_t(), map()) ::
@@ -554,6 +599,69 @@ defmodule Bookmoves.Repertoire do
 
   defp maybe_exclude_ids(query, exclude_ids) do
     from(p in query, where: p.id not in ^exclude_ids)
+  end
+
+  @spec import_positions(Scope.t(), pos_integer(), [Position.attrs()]) ::
+          {:ok, import_result()} | {:error, Ecto.Changeset.t()}
+  defp import_positions(%Scope{} = scope, repertoire_id, attrs_list) do
+    {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
+    total = length(attrs_list)
+
+    {unique_attrs, duplicates_in_upload} = dedupe_attrs_by_move_key(attrs_list)
+    candidate_parent_fens = Enum.map(unique_attrs, & &1.parent_fen) |> Enum.uniq()
+    candidate_sans = Enum.map(unique_attrs, & &1.san) |> Enum.uniq()
+    candidate_fens = Enum.map(unique_attrs, & &1.fen) |> Enum.uniq()
+
+    existing_keys =
+      Repo.all(
+        from p in Position,
+          where:
+            p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and
+              p.parent_fen in ^candidate_parent_fens and
+              p.san in ^candidate_sans and
+              p.fen in ^candidate_fens,
+          select: {p.parent_fen, p.san, p.fen}
+      )
+      |> MapSet.new()
+
+    {attrs_to_insert, existing_count} =
+      Enum.reduce(unique_attrs, {[], 0}, fn attrs, {acc, count} ->
+        if MapSet.member?(existing_keys, {attrs.parent_fen, attrs.san, attrs.fen}) do
+          {acc, count + 1}
+        else
+          {[attrs | acc], count}
+        end
+      end)
+
+    attrs_to_insert = Enum.reverse(attrs_to_insert)
+    skipped = duplicates_in_upload + existing_count
+
+    if attrs_to_insert == [] do
+      {:ok, %{inserted: 0, skipped: skipped, total: total}}
+    else
+      case create_positions(scope, repertoire_id, attrs_to_insert) do
+        {:ok, _changes} ->
+          {:ok, %{inserted: length(attrs_to_insert), skipped: skipped, total: total}}
+
+        {:error, _step, changeset, _changes_so_far} ->
+          {:error, changeset}
+      end
+    end
+  end
+
+  @spec dedupe_attrs_by_move_key([Position.attrs()]) :: {[Position.attrs()], non_neg_integer()}
+  defp dedupe_attrs_by_move_key(attrs_list) do
+    attrs_list
+    |> Enum.reduce({[], MapSet.new(), 0}, fn attrs, {acc, seen_keys, duplicates} ->
+      key = {attrs.parent_fen, attrs.san, attrs.fen}
+
+      if MapSet.member?(seen_keys, key) do
+        {acc, seen_keys, duplicates + 1}
+      else
+        {[attrs | acc], MapSet.put(seen_keys, key), duplicates}
+      end
+    end)
+    |> then(fn {acc, _seen, duplicates} -> {Enum.reverse(acc), duplicates} end)
   end
 
   @spec format_notation_with_numbers([String.t()]) :: String.t()

@@ -22,7 +22,8 @@ config :bookmoves, :scopes,
 
 config :bookmoves,
   ecto_repos: [Bookmoves.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  pgn_parse_timeout_ms: 1_500
 
 # Configure the endpoint
 config :bookmoves, BookmovesWeb.Endpoint,

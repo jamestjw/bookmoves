@@ -129,6 +129,109 @@ defmodule Bookmoves.RepertoireTest do
       assert {:ok, updated} = Repertoire.update_position(position, %{comment: "main line"})
       assert updated.comment == "main line"
     end
+
+    test "import_pgn inserts new moves and skips existing", %{
+      scope: scope,
+      repertoire: repertoire
+    } do
+      root = white_root_fixture()
+
+      existing_move = %{
+        fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        san: "e4",
+        parent_fen: root.fen,
+        color_side: "white"
+      }
+
+      assert {:ok, _position} = Repertoire.create_position(scope, repertoire.id, existing_move)
+
+      pgn = "[Event \"Import\"]\n\n1. e4 e5"
+
+      assert {:ok, %{inserted: 1, skipped: 1, total: 2}} =
+               Repertoire.import_pgn(scope, repertoire.id, pgn)
+
+      assert Repertoire.get_position_by_fen(
+               scope,
+               repertoire.id,
+               "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2"
+             )
+    end
+
+    test "import_pgn validates pgn payload", %{scope: scope, repertoire: repertoire} do
+      assert {:error, :empty_pgn} = Repertoire.import_pgn(scope, repertoire.id, "")
+
+      assert {:error, :invalid_pgn} =
+               Repertoire.import_pgn(scope, repertoire.id, "this is not a pgn")
+    end
+
+    test "import_pgn imports nested branches and comments", %{
+      scope: scope,
+      repertoire: repertoire
+    } do
+      pgn =
+        """
+        [Event "Import"]
+
+        1. e4 {King's Pawn} e5 (1... c5 {Sicilian} 2. Nc3 e6 (2... Nc6)) 2. Nf3 (2. Nc3 {Vienna})
+        """
+
+      assert {:ok, %{inserted: 8, skipped: 0, total: 8}} =
+               Repertoire.import_pgn(scope, repertoire.id, pgn)
+
+      positions = Repertoire.list_positions(scope, repertoire.id)
+      root_fen = Bookmoves.Repertoire.Position.starting_fen()
+
+      e4 = Enum.find(positions, &(&1.parent_fen == root_fen and &1.san == "e4"))
+      assert e4
+      assert e4.comment == "King's Pawn"
+
+      e5 = Enum.find(positions, &(&1.parent_fen == e4.fen and &1.san == "e5"))
+      c5 = Enum.find(positions, &(&1.parent_fen == e4.fen and &1.san == "c5"))
+      assert e5
+      assert c5
+      assert c5.comment == "Sicilian"
+
+      nc3_after_e5 = Enum.find(positions, &(&1.parent_fen == e5.fen and &1.san == "Nc3"))
+      nf3 = Enum.find(positions, &(&1.parent_fen == e5.fen and &1.san == "Nf3"))
+      assert nc3_after_e5
+      assert nc3_after_e5.comment == "Vienna"
+      assert nf3
+
+      nc3_after_c5 = Enum.find(positions, &(&1.parent_fen == c5.fen and &1.san == "Nc3"))
+      assert nc3_after_c5
+
+      e6 = Enum.find(positions, &(&1.parent_fen == nc3_after_c5.fen and &1.san == "e6"))
+      assert e6
+
+      nc6 = Enum.find(positions, &(&1.parent_fen == nc3_after_c5.fen and &1.san == "Nc6"))
+      assert nc6
+    end
+
+    test "import_pgn keeps existing comment for matching move key", %{
+      scope: scope,
+      repertoire: repertoire
+    } do
+      root = white_root_fixture()
+
+      {:ok, _position} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          comment: "Existing comment",
+          color_side: "white"
+        })
+
+      pgn = "[Event \"Import\"]\n\n1. e4 {New comment} e5"
+
+      assert {:ok, %{inserted: 1, skipped: 1, total: 2}} =
+               Repertoire.import_pgn(scope, repertoire.id, pgn)
+
+      positions = Repertoire.list_positions(scope, repertoire.id)
+      e4 = Enum.find(positions, &(&1.parent_fen == root.fen and &1.san == "e4"))
+      assert e4
+      assert e4.comment == "Existing comment"
+    end
   end
 
   describe "due positions" do
