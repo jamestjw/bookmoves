@@ -18,12 +18,12 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       main_class="px-4 py-6 sm:px-6 lg:px-8"
     >
       <.header>
-        {review_title(@review_mode)} {@side |> String.upcase()}
+        {review_title(@review_mode)} - {@repertoire.name}
         <:subtitle>
           {review_subtitle(@review_mode)}
         </:subtitle>
         <:actions>
-          <.button navigate={~p"/repertoire/#{@side}"}>
+          <.button navigate={~p"/repertoire/#{@repertoire.id}"}>
             <.icon name="hero-arrow-left" /> Back
           </.button>
         </:actions>
@@ -129,7 +129,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                   >
                     Review next {min(@remaining_due_count, batch_size())} positions
                   </.button>
-                  <.button navigate={~p"/repertoire/#{@side}"} class="btn btn-ghost w-full">
+                  <.button navigate={~p"/repertoire/#{@repertoire.id}"} class="btn btn-ghost w-full">
                     Back to Repertoire
                   </.button>
                 </div>
@@ -147,7 +147,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                       Practice more moves
                     </.button>
                     <.button
-                      navigate={~p"/repertoire/#{@side}"}
+                      navigate={~p"/repertoire/#{@repertoire.id}"}
                       class="btn btn-ghost w-full mt-3"
                     >
                       Back to Repertoire
@@ -155,20 +155,20 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                   <% else %>
                     <%= if @review_mode == :due and @practice_available? do %>
                       <.button
-                        navigate={~p"/repertoire/#{@side}/practice"}
+                        navigate={~p"/repertoire/#{@repertoire.id}/practice"}
                         class="btn btn-primary w-full"
                       >
                         Practice now
                       </.button>
                       <.button
-                        navigate={~p"/repertoire/#{@side}"}
+                        navigate={~p"/repertoire/#{@repertoire.id}"}
                         class="btn btn-ghost w-full mt-3"
                       >
                         Back to Repertoire
                       </.button>
                     <% else %>
                       <.button
-                        navigate={~p"/repertoire/#{@side}"}
+                        navigate={~p"/repertoire/#{@repertoire.id}"}
                         class="btn btn-primary w-full"
                       >
                         Back to Repertoire
@@ -186,8 +186,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   @impl true
-  def mount(%{"side" => side}, _session, socket) when side in ["white", "black"] do
-    {:ok, start_review(socket, side, review_mode(socket))}
+  def mount(%{"repertoire_id" => repertoire_id}, _session, socket) do
+    repertoire = Repertoire.get_repertoire!(socket.assigns.current_scope, repertoire_id)
+    socket = assign(socket, repertoire: repertoire)
+
+    {:ok, start_review(socket, repertoire.color_side, review_mode(socket))}
   end
 
   @impl true
@@ -204,8 +207,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         all_children_sans =
           Repertoire.get_children(
             socket.assigns.current_scope,
-            parent_position.fen,
-            socket.assigns.side
+            socket.assigns.repertoire.id,
+            parent_position.fen
           )
           |> Enum.map(&String.upcase(&1.san || ""))
 
@@ -323,7 +326,10 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           exclude_ids = MapSet.to_list(practice_seen_ids)
 
           practice_chains =
-            ReviewBatch.build_practice_chains_batch(socket.assigns.current_scope, side,
+            ReviewBatch.build_practice_chains_batch(
+              socket.assigns.current_scope,
+              socket.assigns.repertoire.id,
+              side,
               batch_size: batch_size(),
               exclude_ids: exclude_ids
             )
@@ -332,6 +338,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             if practice_chains == [] and exclude_ids != [] do
               {ReviewBatch.build_practice_chains_batch(
                  socket.assigns.current_scope,
+                 socket.assigns.repertoire.id,
                  side,
                  batch_size: batch_size()
                ), MapSet.new()}
@@ -348,7 +355,10 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           {practice_chains, new_seen_ids}
 
         :due ->
-          {ReviewBatch.build_due_chains_batch(socket.assigns.current_scope, side,
+          {ReviewBatch.build_due_chains_batch(
+             socket.assigns.current_scope,
+             socket.assigns.repertoire.id,
+             side,
              batch_size: batch_size(),
              chain_limit: chain_limit()
            ), MapSet.new()}
@@ -364,7 +374,12 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             remaining_due_count: 0,
             review_mode: review_mode,
             empty_state_message: empty_state_message(review_mode),
-            practice_available?: practice_available?(socket.assigns.current_scope, side),
+            practice_available?:
+              practice_available?(
+                socket.assigns.current_scope,
+                socket.assigns.repertoire.id,
+                side
+              ),
             practice_seen_ids: practice_seen_ids
           )
 
@@ -393,15 +408,17 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           remaining_due_count: 0,
           review_mode: review_mode,
           empty_state_message: empty_state_message(review_mode),
-          practice_available?: practice_available?(socket.assigns.current_scope, side),
+          practice_available?:
+            practice_available?(socket.assigns.current_scope, socket.assigns.repertoire.id, side),
           practice_seen_ids: practice_seen_ids
         )
     end
   end
 
-  @spec build_notation(Position.t(), String.t(), Bookmoves.Accounts.Scope.t()) :: String.t()
-  defp build_notation(%Position{} = position, side, scope) do
-    Repertoire.get_position_chain(scope, position.fen, side)
+  @spec build_notation(Position.t(), pos_integer(), String.t(), Bookmoves.Accounts.Scope.t()) ::
+          String.t()
+  defp build_notation(%Position{} = position, repertoire_id, _side, scope) do
+    Repertoire.get_position_chain(scope, repertoire_id, position.fen)
     |> Enum.map(& &1.san)
     |> Enum.reject(&is_nil/1)
     |> Repertoire.format_notation_with_numbers()
@@ -420,7 +437,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   @spec handle_scored_targets(Phoenix.LiveView.Socket.t(), boolean()) ::
           {:noreply, Phoenix.LiveView.Socket.t()}
   defp handle_scored_targets(socket, correct) do
-    %{due_targets: due_targets, side: side} = socket.assigns
+    %{due_targets: due_targets, repertoire: %{id: repertoire_id}} = socket.assigns
 
     case socket.assigns.review_mode do
       :practice ->
@@ -432,7 +449,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             advance_within_batch(socket)
 
           {:error, _changeset} ->
-            abort_review(socket, side, "Unable to record review result. Please try again.")
+            abort_review(
+              socket,
+              repertoire_id,
+              "Unable to record review result. Please try again."
+            )
         end
     end
   end
@@ -466,7 +487,12 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         ]) ::
           Phoenix.LiveView.Socket.t()
   defp start_chain(socket, side, remaining_chains, [%Position{} = due_position | rest_chain]) do
-    case parent_position(socket.assigns.current_scope, due_position.parent_fen, side) do
+    case parent_position(
+           socket.assigns.current_scope,
+           socket.assigns.repertoire.id,
+           due_position.parent_fen,
+           side
+         ) do
       %Position{} = parent ->
         hint_sans =
           [due_position]
@@ -486,7 +512,13 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             show_result: false,
             last_result: nil,
             attempted_incorrect: false,
-            move_notation: build_notation(parent, side, socket.assigns.current_scope),
+            move_notation:
+              build_notation(
+                parent,
+                socket.assigns.repertoire.id,
+                side,
+                socket.assigns.current_scope
+              ),
             hint_sans: hint_sans,
             batch_complete?: false
           )
@@ -511,7 +543,12 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   defp advance_chain_step(socket, %Position{} = next_due, rest_chain) do
     %{side: side, remaining_chains: _remaining_chains} = socket.assigns
 
-    case parent_position(socket.assigns.current_scope, next_due.parent_fen, side) do
+    case parent_position(
+           socket.assigns.current_scope,
+           socket.assigns.repertoire.id,
+           next_due.parent_fen,
+           side
+         ) do
       %Position{} = parent ->
         hint_sans =
           [next_due]
@@ -530,7 +567,13 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             show_result: false,
             last_result: nil,
             attempted_incorrect: false,
-            move_notation: build_notation(parent, side, socket.assigns.current_scope),
+            move_notation:
+              build_notation(
+                parent,
+                socket.assigns.repertoire.id,
+                side,
+                socket.assigns.current_scope
+              ),
             hint_sans: hint_sans,
             batch_complete?: false
           )
@@ -563,7 +606,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
       :due ->
         remaining_due_count =
-          Repertoire.count_due_positions_for_side(socket.assigns.current_scope, side)
+          Repertoire.count_due_positions_for_side(
+            socket.assigns.current_scope,
+            socket.assigns.repertoire.id,
+            side
+          )
 
         socket =
           assign(socket,
@@ -599,13 +646,13 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     Application.get_env(:bookmoves, :review_chain_limit, 3)
   end
 
-  @spec abort_review(Phoenix.LiveView.Socket.t(), String.t(), String.t()) ::
+  @spec abort_review(Phoenix.LiveView.Socket.t(), pos_integer(), String.t()) ::
           {:noreply, Phoenix.LiveView.Socket.t()}
-  defp abort_review(socket, side, message) do
+  defp abort_review(socket, repertoire_id, message) do
     {:noreply,
      socket
      |> put_flash(:error, message)
-     |> push_navigate(to: ~p"/repertoire/#{side}")}
+     |> push_navigate(to: ~p"/repertoire/#{repertoire_id}")}
   end
 
   @spec review_mode(Phoenix.LiveView.Socket.t()) :: review_mode()
@@ -633,18 +680,18 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     "No positions due for review! Come back later or add more moves to your repertoire."
   end
 
-  @spec practice_available?(Bookmoves.Accounts.Scope.t(), String.t()) :: boolean()
-  defp practice_available?(scope, side) do
-    Repertoire.count_practice_positions_for_side(scope, side) > 0
+  @spec practice_available?(Bookmoves.Accounts.Scope.t(), pos_integer(), String.t()) :: boolean()
+  defp practice_available?(scope, repertoire_id, side) do
+    Repertoire.count_practice_positions_for_side(scope, repertoire_id, side) > 0
   end
 
-  @spec parent_position(Bookmoves.Accounts.Scope.t(), String.t(), String.t()) ::
+  @spec parent_position(Bookmoves.Accounts.Scope.t(), pos_integer(), String.t(), String.t()) ::
           Position.t() | nil
-  defp parent_position(scope, parent_fen, side) do
+  defp parent_position(scope, repertoire_id, parent_fen, side) do
     if parent_fen == Position.starting_fen() do
       Repertoire.get_root(side)
     else
-      Repertoire.get_position_by_fen(scope, parent_fen, side)
+      Repertoire.get_position_by_fen(scope, repertoire_id, parent_fen)
     end
   end
 

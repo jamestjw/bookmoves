@@ -6,15 +6,20 @@ defmodule Bookmoves.RepertoireTest do
   import Bookmoves.RepertoireFixtures
 
   setup do
-    %{scope: user_scope_fixture()}
+    scope = user_scope_fixture()
+    repertoire = repertoire_fixture(scope, %{color_side: "white"})
+    %{scope: scope, repertoire: repertoire}
   end
 
   describe "position chains" do
-    test "get_position_chain returns root to current order", %{scope: scope} do
+    test "get_position_chain returns root to current order", %{
+      scope: scope,
+      repertoire: repertoire
+    } do
       root = white_root_fixture()
 
       {:ok, pos1} =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -22,7 +27,7 @@ defmodule Bookmoves.RepertoireTest do
         })
 
       {:ok, pos2} =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
           san: "e5",
           parent_fen: pos1.fen,
@@ -30,14 +35,14 @@ defmodule Bookmoves.RepertoireTest do
         })
 
       {:ok, pos3} =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
           san: "Nf3",
           parent_fen: pos2.fen,
           color_side: "white"
         })
 
-      chain = Repertoire.get_position_chain(scope, pos3.fen, "white")
+      chain = Repertoire.get_position_chain(scope, repertoire.id, pos3.fen)
 
       assert Enum.map(chain, & &1.fen) == [pos1.fen, pos2.fen, pos3.fen]
       assert Enum.map(chain, & &1.san) == ["e4", "e5", "Nf3"]
@@ -45,7 +50,7 @@ defmodule Bookmoves.RepertoireTest do
   end
 
   describe "positions" do
-    test "create_positions inserts all rows", %{scope: scope} do
+    test "create_positions inserts all rows", %{scope: scope, repertoire: repertoire} do
       root = white_root_fixture()
 
       attrs_list = [
@@ -63,22 +68,22 @@ defmodule Bookmoves.RepertoireTest do
         }
       ]
 
-      assert {:ok, _} = Repertoire.create_positions(scope, attrs_list)
+      assert {:ok, _} = Repertoire.create_positions(scope, repertoire.id, attrs_list)
 
       assert Repertoire.get_position_by_fen(
                scope,
-               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-               "white"
+               repertoire.id,
+               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
              )
 
       assert Repertoire.get_position_by_fen(
                scope,
-               "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
-               "white"
+               repertoire.id,
+               "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1"
              )
     end
 
-    test "create_positions rolls back on invalid attrs", %{scope: scope} do
+    test "create_positions rolls back on invalid attrs", %{scope: scope, repertoire: repertoire} do
       root = white_root_fixture()
 
       attrs_list = [
@@ -89,32 +94,32 @@ defmodule Bookmoves.RepertoireTest do
           color_side: "white"
         },
         %{
-          fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
           san: "d4",
           parent_fen: root.fen
         }
       ]
 
-      assert {:error, _, _changeset, _} = Repertoire.create_positions(scope, attrs_list)
+      assert {:error, _, _changeset, _} =
+               Repertoire.create_positions(scope, repertoire.id, attrs_list)
 
       refute Repertoire.get_position_by_fen(
                scope,
-               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-               "white"
+               repertoire.id,
+               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
              )
 
       refute Repertoire.get_position_by_fen(
                scope,
-               "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
-               "white"
+               repertoire.id,
+               "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1"
              )
     end
 
-    test "update_position updates persisted fields", %{scope: scope} do
+    test "update_position updates persisted fields", %{scope: scope, repertoire: repertoire} do
       root = white_root_fixture()
 
       {:ok, position} =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq - 0 1",
           san: "c4",
           parent_fen: root.fen,
@@ -128,14 +133,15 @@ defmodule Bookmoves.RepertoireTest do
 
   describe "due positions" do
     test "list_due_positions_for_side returns only positions for the side to move", %{
-      scope: scope
+      scope: scope,
+      repertoire: repertoire
     } do
       now = DateTime.utc_now()
 
       white_to_move = white_root_fixture()
 
       {:ok, _black_to_move} =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: white_to_move.fen,
@@ -143,7 +149,7 @@ defmodule Bookmoves.RepertoireTest do
           next_review_at: DateTime.add(now, -60, :second)
         })
 
-      due = Repertoire.list_due_positions_for_side(scope, "white", now)
+      due = Repertoire.list_due_positions_for_side(scope, repertoire.id, "white", now)
 
       assert Enum.map(due, & &1.fen) == [
                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"

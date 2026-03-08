@@ -4,22 +4,20 @@ Bookmoves is a Phoenix LiveView app for spaced repetition training of chess open
 
 ## Features
 
-- **Repertoire Management**: Build opening trees for White and Black sides
+- **Repertoire Management**: Create multiple named repertoires per side (White/Black)
 - **Board-Based Input**: Add moves by dragging pieces on an interactive chessboard
 - **Tree Visualization**: See your full repertoire as a tree with saved and pending moves
 - **Spaced Repetition**: Automatic scheduling using simplified SM-2 algorithm
 - **Batch Review**: Review due moves in batches with short linear chains
 - **Practice Mode**: Review random moves without affecting spaced repetition
 - **Transposition Handling**: Same positions are merged automatically
-- **User Accounts**: Register and log in to access your repertoire
+- **User Accounts**: Register and log in to access your own repertoires
 
 ## Future features
 
-- Support multiple users
-- Users can have multiple repertoires for each colour
 - Add preset opening repertoires that users can import
 - Allow users to add moves via PGN
-- Practice mode for a specific subtree in the repertoire
+- Practice mode for a specific subtree in a repertoire
 
 ## Getting Started
 
@@ -29,12 +27,11 @@ Bookmoves is a Phoenix LiveView app for spaced repetition training of chess open
 
 ## Usage
 
-1. Select your side (White or Black) from the home page
-2. Click "Add Moves" to build your repertoire
-3. Drag pieces on the board to add moves
-4. Navigate the tree by clicking on moves
-5. Click "Save All" to persist your changes
-6. Return to your repertoire and click "Review" to practice
+1. Sign in and open the Repertoires page
+2. Create a repertoire by choosing a name and side (White/Black)
+3. Open the repertoire and click "View/Add Moves"
+4. Drag pieces on the board to add moves and navigate by clicking saved moves
+5. Start "Review" for due moves or "Practice" for random moves in that repertoire
 
 ## Architecture
 

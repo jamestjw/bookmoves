@@ -8,14 +8,32 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
   setup :register_and_log_in_user
 
+  describe "index" do
+    test "can delete a repertoire", %{conn: conn, scope: scope} do
+      repertoire = repertoire_fixture(scope, %{name: "To Delete", color_side: "white"})
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire")
+
+      assert render(view) =~ "To Delete"
+
+      view
+      |> element("#delete-repertoire-#{repertoire.id}")
+      |> render_click()
+
+      refute render(view) =~ "To Delete"
+    end
+  end
+
   describe "review" do
     test "accepts SAN moves as correct", %{conn: conn, scope: scope} do
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -23,7 +41,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           next_review_at: past
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
 
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
 
@@ -33,10 +51,11 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
     test "shows current move list under the board", %{conn: conn, scope: scope} do
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
       future = DateTime.add(DateTime.utc_now(), 3600, :second)
 
       {:ok, pos1} =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -45,7 +64,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       {:ok, pos2} =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
           san: "e5",
           parent_fen: pos1.fen,
@@ -54,7 +73,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       {:ok, pos3} =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
           san: "Nf3",
           parent_fen: pos2.fen,
@@ -63,7 +82,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
         })
 
       _pos4 =
-        Repertoire.create_position(scope, %{
+        Repertoire.create_position(scope, repertoire.id, %{
           fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
           san: "Nc6",
           parent_fen: pos3.fen,
@@ -71,7 +90,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           next_review_at: future
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
 
       html = render(view)
       assert html =~ "Current:"
@@ -80,11 +99,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
     test "does not prompt for additional correct moves in batch", %{conn: conn, scope: scope} do
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due_child =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -94,6 +115,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
       _child_two =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
           san: "d4",
           parent_fen: root.fen,
@@ -101,7 +123,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           next_review_at: past
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
 
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
 
@@ -111,11 +133,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
     test "marks repeated move as not due once advanced", %{conn: conn, scope: scope} do
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due_child =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -125,6 +149,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
       _child_two =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
           san: "d4",
           parent_fen: root.fen,
@@ -132,7 +157,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           next_review_at: past
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
 
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
@@ -143,11 +168,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
     test "shows an error for incorrect moves", %{conn: conn, scope: scope} do
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due_child =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -155,7 +182,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           next_review_at: past
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
 
       render_hook(view, "board-move", %{"san" => "d4", "move" => "d2d4"})
 
@@ -165,11 +192,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
     test "skip moves on and scores as incorrect", %{conn: conn, scope: scope} do
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
 
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       due_child =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -177,12 +206,12 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           next_review_at: past
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
 
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       render_click(view, "skip")
 
-      skipped = Repertoire.get_position_by_fen(scope, due_child.fen, "white")
+      skipped = Repertoire.get_position_by_fen(scope, repertoire.id, due_child.fen)
 
       assert skipped.repetitions == 0
       assert skipped.interval_days == 1
@@ -200,10 +229,12 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
 
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       _due_one =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -213,6 +244,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
       _due_two =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
           san: "d4",
           parent_fen: root.fen,
@@ -220,7 +252,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           next_review_at: past
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/review")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
 
       render_click(view, "skip")
 
@@ -236,10 +268,12 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
 
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
       now = DateTime.utc_now() |> DateTime.truncate(:second)
 
       practice_pos =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -248,19 +282,23 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           next_review_at: DateTime.add(now, 3600, :second)
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/practice")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/practice")
 
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
 
-      unchanged = Repertoire.get_position_by_fen(scope, practice_pos.fen, "white")
+      unchanged = Repertoire.get_position_by_fen(scope, repertoire.id, practice_pos.fen)
       assert unchanged.last_reviewed_at == practice_pos.last_reviewed_at
       assert unchanged.next_review_at == practice_pos.next_review_at
     end
 
-    test "shows empty state when no practice-eligible positions exist", %{conn: conn} do
+    test "shows empty state when no practice-eligible positions exist", %{
+      conn: conn,
+      scope: scope
+    } do
       _root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/practice")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/practice")
 
       assert has_element?(view, "#review-board")
       refute has_element?(view, "#practice-more")
@@ -272,9 +310,11 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       on_exit(fn -> Application.delete_env(:bookmoves, :review_batch_size) end)
 
       root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
 
       _practice_one =
         position_fixture(scope, %{
+          repertoire: repertoire,
           fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
           san: "e4",
           parent_fen: root.fen,
@@ -282,7 +322,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           move_color: "white"
         })
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/white/practice")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/practice")
 
       render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
 

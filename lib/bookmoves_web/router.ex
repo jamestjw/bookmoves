@@ -28,11 +28,11 @@ defmodule BookmovesWeb.Router do
       pipe_through :browser
 
       live "/repertoire", RepertoireLive.Index, :index
-      live "/repertoire/:side", RepertoireLive.Show, :show
-      live "/repertoire/:side/review", RepertoireLive.Review, :review
-      live "/repertoire/:side/practice", RepertoireLive.Review, :practice
-      live "/repertoire/:side/add", RepertoireLive.Add, :add
-      live "/repertoire/:side/add/:position_id", RepertoireLive.Add, :add_from_position
+      live "/repertoire/:repertoire_id", RepertoireLive.Show, :show
+      live "/repertoire/:repertoire_id/review", RepertoireLive.Review, :review
+      live "/repertoire/:repertoire_id/practice", RepertoireLive.Review, :practice
+      live "/repertoire/:repertoire_id/add", RepertoireLive.Add, :add
+      live "/repertoire/:repertoire_id/add/:position_id", RepertoireLive.Add, :add_from_position
     end
   end
 

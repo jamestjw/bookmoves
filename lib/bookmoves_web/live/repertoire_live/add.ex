@@ -13,10 +13,10 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       container_class="mx-auto w-full max-w-[1000px] space-y-4"
     >
       <.header>
-        View/Add Moves - {@side |> String.upcase()}
+        View/Add Moves - {@repertoire.name}
         <:subtitle>Drag pieces to build your opening lines.</:subtitle>
         <:actions>
-          <.button navigate={~p"/repertoire/#{@side}"}>
+          <.button navigate={~p"/repertoire/#{@repertoire.id}"}>
             <.icon name="hero-arrow-left" /> Back
           </.button>
         </:actions>
@@ -146,18 +146,19 @@ defmodule BookmovesWeb.RepertoireLive.Add do
   end
 
   @impl true
-  def mount(%{"side" => side}, _session, socket) when side in ["white", "black"] do
-    {:ok, load_add_form(socket, side, nil)}
+  def mount(%{"repertoire_id" => repertoire_id}, _session, socket) do
+    {:ok, load_add_form(socket, repertoire_id, nil)}
   end
 
   @impl true
-  def mount(%{"side" => side, "position_id" => position_id}, _session, socket)
-      when side in ["white", "black"] do
-    {:ok, load_add_form(socket, side, position_id)}
+  def mount(%{"repertoire_id" => repertoire_id, "position_id" => position_id}, _session, socket) do
+    {:ok, load_add_form(socket, repertoire_id, position_id)}
   end
 
   @impl true
   def handle_event("board-move", %{"san" => san, "fen" => new_fen}, socket) do
+    repertoire_id = repertoire_id!(socket)
+
     %{
       current_fen: current_fen,
       side: side,
@@ -170,7 +171,6 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       san: san,
       fen: new_fen,
       parent_fen: current_fen,
-      color_side: side,
       comment: ""
     }
 
@@ -183,9 +183,14 @@ defmodule BookmovesWeb.RepertoireLive.Add do
           _ -> build_position_chain(socket, existing_child, side)
         end
 
-      {:noreply, apply_position_state(socket, side, existing_child, new_chain)}
+      {:noreply,
+       apply_position_state(socket, socket.assigns.repertoire, side, existing_child, new_chain)}
     else
-      case Repertoire.create_position_if_not_exists(scope, staged_move) do
+      case Repertoire.create_position_if_not_exists(
+             scope,
+             repertoire_id,
+             staged_move
+           ) do
         {:ok, %Repertoire.Position{} = position} ->
           new_chain =
             if position.parent_fen == current_fen and is_list(position_chain) do
@@ -197,7 +202,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
           {:noreply,
            socket
            |> put_flash(:info, "Move added successfully")
-           |> apply_position_state(side, position, new_chain)}
+           |> apply_position_state(socket.assigns.repertoire, side, position, new_chain)}
 
         {:error, changeset} ->
           {:noreply,
@@ -211,6 +216,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   @impl true
   def handle_event("navigate", %{"fen" => fen}, socket) do
+    repertoire_id = repertoire_id!(socket)
     %{side: side, children: children, position_chain: position_chain} = socket.assigns
 
     child = Enum.find(children, fn position -> position.fen == fen end)
@@ -223,26 +229,46 @@ defmodule BookmovesWeb.RepertoireLive.Add do
           build_position_chain(socket, child, side)
         end
 
-      {:noreply, apply_position_state(socket, side, child, new_chain)}
+      {:noreply, apply_position_state(socket, socket.assigns.repertoire, side, child, new_chain)}
     else
-      current_pos = Repertoire.get_position_by_fen(socket.assigns.current_scope, fen, side)
+      current_pos =
+        Repertoire.get_position_by_fen(
+          socket.assigns.current_scope,
+          repertoire_id,
+          fen
+        )
 
       if current_pos do
         position_chain = build_position_chain(socket, current_pos, side)
 
-        {:noreply, apply_position_state(socket, side, current_pos, position_chain)}
+        {:noreply,
+         apply_position_state(
+           socket,
+           socket.assigns.repertoire,
+           side,
+           current_pos,
+           position_chain
+         )}
       else
         {:noreply,
          socket
          |> assign(:current_fen, fen)
          |> assign(:move_notation, "")
-         |> assign(:children, Repertoire.get_children(socket.assigns.current_scope, fen, side))}
+         |> assign(
+           :children,
+           Repertoire.get_children(
+             socket.assigns.current_scope,
+             repertoire_id,
+             fen
+           )
+         )}
       end
     end
   end
 
   @impl true
   def handle_event("rewind", _params, socket) do
+    repertoire_id = repertoire_id!(socket)
     %{parent_fen: parent_fen, side: side, position_chain: position_chain} = socket.assigns
 
     cond do
@@ -253,23 +279,31 @@ defmodule BookmovesWeb.RepertoireLive.Add do
         new_chain = Enum.drop(position_chain, -1)
         position = List.last(new_chain)
 
-        {:noreply, apply_position_state(socket, side, position, new_chain)}
+        {:noreply,
+         apply_position_state(socket, socket.assigns.repertoire, side, position, new_chain)}
 
       true ->
         parent_position =
-          Repertoire.get_position_by_fen(socket.assigns.current_scope, parent_fen, side)
+          Repertoire.get_position_by_fen(
+            socket.assigns.current_scope,
+            repertoire_id,
+            parent_fen
+          )
 
-        {:noreply, load_add_form_from_position(socket, side, parent_position)}
+        {:noreply,
+         load_add_form_from_position(socket, socket.assigns.repertoire, parent_position)}
     end
   end
 
   @impl true
   def handle_event("save-comment", %{"comment" => %{"id" => id, "body" => body}}, socket) do
+    repertoire_id = repertoire_id!(socket)
     position_id = String.to_integer(id)
     trimmed_body = String.trim(body)
 
     case Repertoire.update_position_comment(
            socket.assigns.current_scope,
+           repertoire_id,
            position_id,
            trimmed_body
          ) do
@@ -292,11 +326,16 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   @impl true
   def handle_event("edit-comment", %{"id" => id}, socket) do
+    repertoire_id = repertoire_id!(socket)
     position_id = String.to_integer(id)
 
     position =
       Enum.find(socket.assigns.children, fn child -> child.id == position_id end) ||
-        Repertoire.get_position!(socket.assigns.current_scope, position_id)
+        Repertoire.get_position!(
+          socket.assigns.current_scope,
+          repertoire_id,
+          position_id
+        )
 
     {:noreply,
      assign(socket,
@@ -323,7 +362,8 @@ defmodule BookmovesWeb.RepertoireLive.Add do
             _ -> build_position_chain(socket, child, side)
           end
 
-        {:noreply, apply_position_state(socket, side, child, new_chain)}
+        {:noreply,
+         apply_position_state(socket, socket.assigns.repertoire, side, child, new_chain)}
 
       _ ->
         {:noreply, socket}
@@ -332,14 +372,15 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    position = Repertoire.get_position!(socket.assigns.current_scope, id)
+    position =
+      Repertoire.get_position!(socket.assigns.current_scope, repertoire_id!(socket), id)
 
     case Repertoire.delete_position(position) do
       {:ok, _} ->
         {:noreply,
          socket
          |> put_flash(:info, "Move deleted")
-         |> load_add_form(socket.assigns.side, socket.assigns.current_position_id)}
+         |> load_add_form(repertoire_id!(socket), socket.assigns.current_position_id)}
 
       {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Failed to delete move")}
@@ -361,43 +402,55 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     assign(socket, children: children)
   end
 
-  @spec load_add_form(Phoenix.LiveView.Socket.t(), String.t(), pos_integer() | nil) ::
+  @spec load_add_form(
+          Phoenix.LiveView.Socket.t(),
+          pos_integer() | String.t(),
+          pos_integer() | nil
+        ) ::
           Phoenix.LiveView.Socket.t()
-  defp load_add_form(socket, side, position_id) do
+  defp load_add_form(socket, repertoire_id, position_id) do
+    repertoire = Repertoire.get_repertoire!(socket.assigns.current_scope, repertoire_id)
+    socket = assign(socket, repertoire: repertoire)
+
     position =
       if position_id,
-        do: Repertoire.get_position!(socket.assigns.current_scope, position_id),
+        do: Repertoire.get_position!(socket.assigns.current_scope, repertoire.id, position_id),
         else: nil
 
-    load_add_form_from_position(socket, side, position)
+    load_add_form_from_position(socket, repertoire, position)
   end
 
   @spec load_add_form_from_position(
           Phoenix.LiveView.Socket.t(),
-          String.t(),
+          Bookmoves.Repertoire.Repertoire.persisted_t(),
           Repertoire.Position.t() | nil
         ) :: Phoenix.LiveView.Socket.t()
-  defp load_add_form_from_position(socket, side, position) do
+  defp load_add_form_from_position(socket, repertoire, position) do
+    side = repertoire.color_side
     current_position = if position, do: position, else: Repertoire.get_root(side)
     position_chain = build_position_chain(socket, current_position, side)
 
-    apply_position_state(socket, side, current_position, position_chain)
+    apply_position_state(socket, repertoire, side, current_position, position_chain)
   end
 
   @spec apply_position_state(
           Phoenix.LiveView.Socket.t(),
+          Bookmoves.Repertoire.Repertoire.persisted_t(),
           String.t(),
           Repertoire.Position.t(),
           [Repertoire.Position.t()]
         ) :: Phoenix.LiveView.Socket.t()
-  defp apply_position_state(socket, side, position, position_chain) do
-    children = Repertoire.get_children(socket.assigns.current_scope, position.fen, side)
+  defp apply_position_state(socket, repertoire, side, position, position_chain) do
+    children =
+      Repertoire.get_children(socket.assigns.current_scope, repertoire.id, position.fen)
+
     moves = Enum.map(position_chain, & &1.san) |> Enum.reject(&is_nil/1)
     move_notation = Repertoire.format_notation_with_numbers(moves)
     current_move_index = length(moves)
 
     assign(socket,
       side: side,
+      repertoire: repertoire,
       current_position_id: position.id,
       current_position: position,
       current_fen: position.fen,
@@ -434,7 +487,20 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     [position]
   end
 
-  defp build_position_chain(socket, %Repertoire.Position{} = position, side) do
-    Repertoire.get_position_chain(socket.assigns.current_scope, position.fen, side)
+  defp build_position_chain(socket, %Repertoire.Position{} = position, _side) do
+    Repertoire.get_position_chain(
+      socket.assigns.current_scope,
+      repertoire_id!(socket),
+      position.fen
+    )
+  end
+
+  @spec repertoire_id!(Phoenix.LiveView.Socket.t()) :: pos_integer()
+  defp repertoire_id!(%Phoenix.LiveView.Socket{assigns: %{repertoire: %{id: id}}})
+       when is_integer(id),
+       do: id
+
+  defp repertoire_id!(_socket) do
+    raise ArgumentError, "expected socket assigns to include repertoire id"
   end
 end

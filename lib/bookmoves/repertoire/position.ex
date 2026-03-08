@@ -8,11 +8,11 @@ defmodule Bookmoves.Repertoire.Position do
   @type t :: %__MODULE__{
           id: pos_integer() | nil,
           user_id: pos_integer() | nil,
+          repertoire_id: pos_integer() | nil,
           fen: String.t() | nil,
           san: String.t() | nil,
           parent_fen: String.t() | nil,
           comment: String.t() | nil,
-          color_side: String.t() | nil,
           move_color: String.t() | nil,
           next_review_at: DateTime.t() | nil,
           last_reviewed_at: DateTime.t() | nil,
@@ -25,7 +25,6 @@ defmodule Bookmoves.Repertoire.Position do
 
   @type attrs :: %{
           required(:fen) => String.t(),
-          required(:color_side) => String.t(),
           optional(:san) => String.t() | nil,
           optional(:parent_fen) => String.t() | nil,
           optional(:comment) => String.t() | nil,
@@ -40,11 +39,11 @@ defmodule Bookmoves.Repertoire.Position do
   @type persisted_t :: %__MODULE__{
           id: pos_integer(),
           user_id: pos_integer() | nil,
+          repertoire_id: pos_integer() | nil,
           fen: String.t(),
           san: String.t() | nil,
           parent_fen: String.t() | nil,
           comment: String.t() | nil,
-          color_side: String.t(),
           move_color: String.t() | nil,
           next_review_at: DateTime.t() | nil,
           last_reviewed_at: DateTime.t() | nil,
@@ -63,11 +62,11 @@ defmodule Bookmoves.Repertoire.Position do
 
   schema "positions" do
     belongs_to :user, Bookmoves.Accounts.User
+    belongs_to :repertoire, Bookmoves.Repertoire.Repertoire
     field :fen, :string
     field :san, :string
     field :parent_fen, :string
     field :comment, :string
-    field :color_side, :string
     field :move_color, :string
     field :next_review_at, :utc_datetime
     field :last_reviewed_at, :utc_datetime
@@ -87,7 +86,6 @@ defmodule Bookmoves.Repertoire.Position do
       :san,
       :parent_fen,
       :comment,
-      :color_side,
       :move_color,
       :next_review_at,
       :last_reviewed_at,
@@ -95,16 +93,16 @@ defmodule Bookmoves.Repertoire.Position do
       :ease_factor,
       :repetitions
     ])
-    |> validate_required([:fen, :color_side])
+    |> validate_required([:fen])
     |> put_defaults()
-    |> validate_inclusion(:color_side, ["white", "black"])
     |> validate_inclusion(:move_color, ["white", "black"])
     |> validate_number(:interval_days, greater_than_or_equal_to: 1)
     |> validate_number(:ease_factor, greater_than_or_equal_to: 1.3)
     |> validate_number(:repetitions, greater_than_or_equal_to: 0)
     |> assoc_constraint(:user)
-    |> unique_constraint([:user_id, :fen, :color_side],
-      name: :positions_user_fen_color_side_index
+    |> assoc_constraint(:repertoire)
+    |> unique_constraint([:user_id, :repertoire_id, :fen],
+      name: :positions_user_repertoire_fen_index
     )
   end
 

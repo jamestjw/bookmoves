@@ -8,30 +8,30 @@ defmodule BookmovesWeb.RepertoireLive.Show do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <.header>
-        {@side |> String.upcase() |> Kernel.<>(" Repertoire") |> String.trim()}
-        <:subtitle>View and manage your opening repertoire.</:subtitle>
+        {@repertoire.name}
+        <:subtitle>{String.capitalize(@side)} repertoire</:subtitle>
         <:actions>
-          <.button variant="primary" navigate={~p"/repertoire/#{@side}/add"}>
+          <.button variant="primary" navigate={~p"/repertoire/#{@repertoire.id}/add"}>
             <.icon name="hero-plus" /> View/Add Moves
           </.button>
-          <.button navigate={~p"/repertoire/#{@side}/review"} disabled={@due_count == 0}>
+          <.button navigate={~p"/repertoire/#{@repertoire.id}/review"} disabled={@due_count == 0}>
             Review ({@due_count} due)
           </.button>
-          <.button navigate={~p"/repertoire/#{@side}/practice"} disabled={@total_count == 0}>
+          <.button navigate={~p"/repertoire/#{@repertoire.id}/practice"} disabled={@total_count == 0}>
             Practice
           </.button>
         </:actions>
       </.header>
 
       <div class="mt-6">
-        <div class="flex gap-4 mb-4">
+        <div class="mb-4 flex gap-4">
           <.button navigate={~p"/repertoire"}>
             <.icon name="hero-arrow-left" /> Back
           </.button>
         </div>
 
-        <div class="bg-base-200 rounded-xl p-4">
-          <h3 class="text-lg font-semibold mb-2">Root Position</h3>
+        <div class="rounded-xl bg-base-200 p-4">
+          <h3 class="mb-2 text-lg font-semibold">Root Position</h3>
           <.chessboard id="root-board" fen={@root_position.fen} orientation={@side} />
         </div>
       </div>
@@ -40,26 +40,31 @@ defmodule BookmovesWeb.RepertoireLive.Show do
   end
 
   @impl true
-  def mount(%{"side" => side}, _session, socket) when side in ["white", "black"] do
-    {:ok, load_repertoire(socket, side)}
+  def mount(%{"repertoire_id" => repertoire_id}, _session, socket) do
+    {:ok, load_repertoire(socket, repertoire_id)}
   end
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    position = Repertoire.get_position!(socket.assigns.current_scope, id)
+    position =
+      Repertoire.get_position!(socket.assigns.current_scope, socket.assigns.repertoire.id, id)
+
     {:ok, _} = Repertoire.delete_position(position)
-    {:noreply, load_repertoire(socket, socket.assigns.side)}
+    {:noreply, load_repertoire(socket, socket.assigns.repertoire.id)}
   end
 
-  @spec load_repertoire(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
-  defp load_repertoire(socket, side) do
+  @spec load_repertoire(Phoenix.LiveView.Socket.t(), pos_integer() | String.t()) ::
+          Phoenix.LiveView.Socket.t()
+  defp load_repertoire(socket, repertoire_id) do
     scope = socket.assigns.current_scope
-    root = Repertoire.get_root(side)
-    stats = Repertoire.get_stats(scope, side)
+    repertoire = Repertoire.get_repertoire!(scope, repertoire_id)
+    root = Repertoire.get_root(repertoire.color_side)
+    stats = Repertoire.get_stats(scope, repertoire.id, repertoire.color_side)
 
     assign(socket,
-      page_title: "#{String.upcase(side)} Repertoire",
-      side: side,
+      page_title: repertoire.name,
+      repertoire: repertoire,
+      side: repertoire.color_side,
       root_position: root,
       due_count: stats.due,
       total_count: stats.total
