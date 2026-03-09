@@ -357,7 +357,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           {practice_chains, new_seen_ids}
 
         :due ->
-          {ReviewBatch.build_due_chains_batch(
+          {ReviewBatch.build_due_step_chains_batch(
              socket.assigns.current_scope,
              socket.assigns.repertoire.id,
              side,
@@ -385,7 +385,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             practice_seen_ids: practice_seen_ids
           )
 
-        start_chain(socket, side, rest_chains, chain)
+        start_next_chain(socket, side, rest_chains, chain)
 
       [] ->
         # There were no moves to build a chain with
@@ -473,7 +473,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       [_current_step] ->
         case remaining_chains do
           [next_chain | rest_chains] ->
-            {:noreply, start_chain(socket, side, rest_chains, next_chain)}
+            {:noreply, start_next_chain(socket, side, rest_chains, next_chain)}
 
           [] ->
             {:noreply, complete_batch(socket, side)}
@@ -488,22 +488,19 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           Position.persisted_t()
         ]) ::
           Phoenix.LiveView.Socket.t()
-  defp start_chain(socket, side, remaining_chains, [%Position{} = due_position | rest_chain]) do
-    due_chain = [due_position | rest_chain]
-
-    case build_review_steps(
+  defp start_chain(socket, side, remaining_chains, [%Position{} = due_position | _rest_chain]) do
+    case parent_position(
            socket.assigns.current_scope,
            socket.assigns.repertoire.id,
-           side,
-           due_chain
+           due_position.parent_fen,
+           side
          ) do
-      {:ok, [%{} = step | rest_steps]} ->
-        chain_steps = [step | rest_steps]
-        activate_chain_step(socket, side, remaining_chains, chain_steps, step)
+      %Position{} = parent ->
+        step = %{board_position: parent, due_targets: [due_position]}
+
+        activate_chain_step(socket, side, remaining_chains, [step], step)
 
       _ ->
-        # If step building fails or yields no steps, we fall back to restarting
-        # review selection so the user gets a fresh, valid batch instead of a stuck state.
         start_review(socket, side, socket.assigns.review_mode)
     end
   end
@@ -512,6 +509,34 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           Phoenix.LiveView.Socket.t()
   defp start_chain(socket, side, _remaining_chains, _chain) do
     start_review(socket, side, socket.assigns.review_mode)
+  end
+
+  @spec start_step_chain(
+          Phoenix.LiveView.Socket.t(),
+          String.t(),
+          list(),
+          Bookmoves.ReviewBatch.step_chain()
+        ) :: Phoenix.LiveView.Socket.t()
+  defp start_step_chain(
+         socket,
+         side,
+         remaining_chains,
+         [%{board_position: %Position{}, due_targets: [%Position{} | _]} = step | rest_steps]
+       ) do
+    activate_chain_step(socket, side, remaining_chains, [step | rest_steps], step)
+  end
+
+  defp start_step_chain(socket, side, _remaining_chains, _chain) do
+    start_review(socket, side, socket.assigns.review_mode)
+  end
+
+  @spec start_next_chain(Phoenix.LiveView.Socket.t(), String.t(), list(), list()) ::
+          Phoenix.LiveView.Socket.t()
+  defp start_next_chain(socket, side, remaining_chains, next_chain) do
+    case socket.assigns.review_mode do
+      :due -> start_step_chain(socket, side, remaining_chains, next_chain)
+      :practice -> start_chain(socket, side, remaining_chains, next_chain)
+    end
   end
 
   @spec advance_chain_step(Phoenix.LiveView.Socket.t(), review_step(), [review_step()]) ::
@@ -575,7 +600,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   @spec activate_chain_step(
           Phoenix.LiveView.Socket.t(),
           String.t(),
-          [Bookmoves.ReviewBatch.chain()],
+          list(),
           [review_step()],
           review_step()
         ) :: Phoenix.LiveView.Socket.t()
@@ -676,79 +701,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       Repertoire.get_root(side)
     else
       Repertoire.get_position_by_fen(scope, repertoire_id, parent_fen)
-    end
-  end
-
-  @spec parent_position_for_next_due(
-          Bookmoves.Accounts.Scope.t(),
-          pos_integer(),
-          Position.persisted_t(),
-          Position.persisted_t(),
-          String.t()
-        ) :: Position.t() | nil
-  # TODO: Include opponent transition nodes directly in review chains/batches so
-  # we can advance by explicit node identity and remove this parent lookup.
-  defp parent_position_for_next_due(
-         scope,
-         repertoire_id,
-         %Position{} = current_due,
-         next_due,
-         side
-       ) do
-    parent_from_current_due =
-      current_due
-      |> Repertoire.get_children()
-      |> Enum.find(fn child -> child.fen == next_due.parent_fen end)
-
-    parent_from_current_due || parent_position(scope, repertoire_id, next_due.parent_fen, side)
-  end
-
-  @spec build_review_steps(
-          Bookmoves.Accounts.Scope.t(),
-          pos_integer(),
-          String.t(),
-          [Position.persisted_t()]
-        ) :: {:ok, [review_step()]} | :error
-  defp build_review_steps(scope, repertoire_id, side, [%Position{} = due_position | rest_chain]) do
-    case parent_position(scope, repertoire_id, due_position.parent_fen, side) do
-      %Position{} = parent ->
-        first_step = %{board_position: parent, due_targets: [due_position]}
-
-        case build_review_steps(scope, repertoire_id, side, rest_chain, due_position, [first_step]) do
-          {:ok, steps} -> {:ok, Enum.reverse(steps)}
-          :error -> :error
-        end
-
-      _ ->
-        :error
-    end
-  end
-
-  @spec build_review_steps(
-          Bookmoves.Accounts.Scope.t(),
-          pos_integer(),
-          String.t(),
-          [Position.persisted_t()],
-          Position.persisted_t(),
-          [review_step()]
-        ) :: {:ok, [review_step()]} | :error
-  defp build_review_steps(_scope, _repertoire_id, _side, [], _current_due, acc), do: {:ok, acc}
-
-  defp build_review_steps(
-         scope,
-         repertoire_id,
-         side,
-         [%Position{} = next_due | rest_chain],
-         %Position{} = current_due,
-         acc
-       ) do
-    case parent_position_for_next_due(scope, repertoire_id, current_due, next_due, side) do
-      %Position{} = parent ->
-        step = %{board_position: parent, due_targets: [next_due]}
-        build_review_steps(scope, repertoire_id, side, rest_chain, next_due, [step | acc])
-
-      _ ->
-        :error
     end
   end
 
