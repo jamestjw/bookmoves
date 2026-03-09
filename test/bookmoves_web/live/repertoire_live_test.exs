@@ -333,11 +333,11 @@ defmodule BookmovesWeb.RepertoireLiveTest do
     end
   end
 
-  describe "add" do
+  describe "import pgn" do
     test "imports PGN from uploaded file", %{conn: conn, scope: scope} do
       repertoire = repertoire_fixture(scope, %{color_side: "white"})
 
-      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/add")
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/import-pgn")
 
       upload =
         file_input(view, "#pgn-import-form", :pgn_file, [
@@ -361,6 +361,13 @@ defmodule BookmovesWeb.RepertoireLiveTest do
              )
 
       assert has_element?(view, "#pgn-import-form")
+    end
+
+    test "show page has import pgn button", %{conn: conn, scope: scope} do
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}")
+
+      assert has_element?(view, "a[href='/repertoire/#{repertoire.id}/import-pgn']")
     end
   end
 end

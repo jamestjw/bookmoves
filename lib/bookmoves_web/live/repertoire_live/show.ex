@@ -14,6 +14,12 @@ defmodule BookmovesWeb.RepertoireLive.Show do
           <.button variant="primary" navigate={~p"/repertoire/#{@repertoire.id}/add"}>
             <.icon name="hero-plus" /> View/Add Moves
           </.button>
+          <.button
+            navigate={~p"/repertoire/#{@repertoire.id}/import-pgn"}
+            class="btn btn-outline border-base-300 text-base-content hover:bg-base-200"
+          >
+            <.icon name="hero-arrow-down-tray" /> Import PGN
+          </.button>
           <.button navigate={~p"/repertoire/#{@repertoire.id}/review"} disabled={@due_count == 0}>
             Review ({@due_count} due)
           </.button>
