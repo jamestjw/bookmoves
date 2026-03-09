@@ -461,7 +461,27 @@ defmodule Bookmoves.Repertoire do
 
   @spec delete_position(Position.persisted_t()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
-  def delete_position(%Position{} = position), do: Repo.delete(position)
+  def delete_position(%Position{} = position) do
+    ids = subtree_position_ids(position)
+
+    case ids do
+      [] ->
+        {:error, Ecto.Changeset.add_error(change_position(position), :id, "position not found")}
+
+      _ ->
+        {count, _} =
+          from(p in Position,
+            where: p.id in ^ids
+          )
+          |> Repo.delete_all()
+
+        if count > 0 do
+          {:ok, position}
+        else
+          {:error, Ecto.Changeset.add_error(change_position(position), :id, "position not found")}
+        end
+    end
+  end
 
   @spec change_position(Position.t(), map()) :: Ecto.Changeset.t()
   def change_position(%Position{} = position, attrs \\ %{}) do
@@ -684,6 +704,41 @@ defmodule Bookmoves.Repertoire do
 
       MapSet.union(acc, MapSet.new(keys))
     end)
+  end
+
+  @spec subtree_position_ids(Position.persisted_t()) :: [pos_integer()]
+  defp subtree_position_ids(%Position{} = position) do
+    sql = """
+    WITH RECURSIVE subtree(id, fen) AS (
+      SELECT id, fen
+      FROM positions
+      WHERE id = ? AND user_id = ? AND repertoire_id = ?
+
+      UNION
+
+      SELECT p.id, p.fen
+      FROM positions p
+      JOIN subtree s
+        ON p.parent_fen = s.fen
+      WHERE p.user_id = ? AND p.repertoire_id = ?
+    )
+    SELECT id FROM subtree
+    """
+
+    result =
+      Ecto.Adapters.SQL.query!(
+        Repo,
+        sql,
+        [
+          position.id,
+          position.user_id,
+          position.repertoire_id,
+          position.user_id,
+          position.repertoire_id
+        ]
+      )
+
+    Enum.map(result.rows, fn [id] -> id end)
   end
 
   @spec format_notation_with_numbers([String.t()]) :: String.t()

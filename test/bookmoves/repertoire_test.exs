@@ -130,6 +130,69 @@ defmodule Bookmoves.RepertoireTest do
       assert updated.comment == "main line"
     end
 
+    test "delete_position removes descendants in the same repertoire", %{
+      scope: scope,
+      repertoire: repertoire
+    } do
+      root = white_root_fixture()
+
+      {:ok, e4} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white"
+        })
+
+      {:ok, e5} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+          san: "e5",
+          parent_fen: e4.fen,
+          color_side: "white"
+        })
+
+      {:ok, nf3} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+          san: "Nf3",
+          parent_fen: e5.fen,
+          color_side: "white"
+        })
+
+      {:ok, d4} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+          san: "d4",
+          parent_fen: root.fen,
+          color_side: "white"
+        })
+
+      other_repertoire = repertoire_fixture(scope, %{color_side: "white"})
+
+      {:ok, other_e4} =
+        Repertoire.create_position(scope, other_repertoire.id, %{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white"
+        })
+
+      assert {:ok, _} = Repertoire.delete_position(e5)
+
+      assert Repertoire.get_position!(scope, repertoire.id, e4.id)
+      assert Repertoire.get_position!(scope, repertoire.id, d4.id)
+      assert Repertoire.get_position!(scope, other_repertoire.id, other_e4.id)
+
+      assert_raise Ecto.NoResultsError, fn ->
+        Repertoire.get_position!(scope, repertoire.id, e5.id)
+      end
+
+      assert_raise Ecto.NoResultsError, fn ->
+        Repertoire.get_position!(scope, repertoire.id, nf3.id)
+      end
+    end
+
     test "import_pgn inserts new moves and skips existing", %{
       scope: scope,
       repertoire: repertoire
