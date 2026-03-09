@@ -62,9 +62,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
 
               <%= if @current_position.comment do %>
                 <div class="bg-base-300 rounded-lg p-3 mb-4">
-                  <p class="text-sm opacity-70 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                    {@current_position.comment}
-                  </p>
+                  <p class="text-sm opacity-70 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{@current_position.comment}</p>
                 </div>
               <% end %>
 
