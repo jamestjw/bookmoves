@@ -17,7 +17,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
         <:subtitle>Drag pieces to build your opening lines.</:subtitle>
         <:actions>
           <.button navigate={~p"/repertoire/#{@repertoire.id}"}>
-            <.icon name="hero-arrow-left" /> Back
+            <.icon name="hero-arrow-left" /> Back to Repertoire
           </.button>
         </:actions>
       </.header>
@@ -91,7 +91,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                       >
                         <div class="flex items-start justify-between gap-3">
                           <div class="flex-1">
-                            <span class="font-mono text-base">
+                            <span class="text-base font-semibold tracking-tight">
                               {next_move_label(child, @current_move_index)}
                             </span>
                             <%= if child.comment do %>
@@ -128,16 +128,18 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                 <% end %>
               <% end %>
             </div>
-            <div class="mt-4 flex justify-end">
-              <.button
-                class="btn-ghost btn-sm"
-                phx-click="rewind"
-                disabled={is_nil(@parent_fen)}
-                id="rewind-move-inline"
-              >
-                <.icon name="hero-arrow-left" /> Back
-              </.button>
-            </div>
+            <%= if is_nil(@editing_comment_id) do %>
+              <div class="mt-4 flex justify-end">
+                <.button
+                  class="btn-ghost btn-sm"
+                  phx-click="rewind"
+                  disabled={is_nil(@parent_fen)}
+                  id="rewind-move-inline"
+                >
+                  <.icon name="hero-arrow-left" /> Prev
+                </.button>
+              </div>
+            <% end %>
           </div>
         </div>
       </div>
