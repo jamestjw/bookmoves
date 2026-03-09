@@ -97,6 +97,58 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "1. e4"
     end
 
+    test "position comment is hidden by default and can be toggled", %{conn: conn, scope: scope} do
+      root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+      future = DateTime.add(DateTime.utc_now(), 3600, :second)
+
+      {:ok, e4} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: future
+        })
+
+      {:ok, e5} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+          san: "e5",
+          parent_fen: e4.fen,
+          color_side: "white",
+          comment: "A tempting move, but Black's pieces are too poorly set up to make it work.",
+          next_review_at: future
+        })
+
+      {:ok, _nf3} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+          san: "Nf3",
+          parent_fen: e5.fen,
+          color_side: "white",
+          next_review_at: past
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
+
+      assert has_element?(view, "#toggle-position-comment")
+      refute has_element?(view, "#position-comment")
+
+      view
+      |> element("#toggle-position-comment")
+      |> render_click()
+
+      assert has_element?(view, "#position-comment")
+
+      view
+      |> element("#toggle-position-comment")
+      |> render_click()
+
+      refute has_element?(view, "#position-comment")
+    end
+
     test "does not prompt for additional correct moves in batch", %{conn: conn, scope: scope} do
       root = white_root_fixture()
       repertoire = repertoire_fixture(scope, %{color_side: "white"})

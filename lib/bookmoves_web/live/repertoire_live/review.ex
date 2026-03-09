@@ -38,7 +38,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       <% end %>
 
       <%= if @current_position do %>
-        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)]">
           <div>
             <div class="bg-base-200 rounded-xl p-4 flex justify-center">
               <div style="width: min(100%, 720px); height: min(100%, 720px);">
@@ -56,13 +56,32 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             <.current_moves move_notation={@move_notation} />
           </div>
 
-          <div>
-            <div class="bg-base-200 rounded-xl p-4">
-              <h3 class="font-semibold mb-2">Position</h3>
+          <div class="min-w-0">
+            <div class="bg-base-200 rounded-xl p-4 min-w-0">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <h3 class="font-semibold">Position</h3>
 
-              <%= if @current_position.comment do %>
-                <div class="bg-base-300 rounded-lg p-3 mb-4">
-                  <p class="text-sm opacity-70 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{@current_position.comment}</p>
+                <%= if comment_present?(@current_position.comment) do %>
+                  <.button
+                    id="toggle-position-comment"
+                    phx-click="toggle-position-comment"
+                    class="btn btn-ghost btn-xs"
+                  >
+                    <.icon
+                      name={if @show_position_comment, do: "hero-eye-slash", else: "hero-eye"}
+                      class="h-4 w-4"
+                    />
+                    {if @show_position_comment, do: "Hide note", else: "Show note"}
+                  </.button>
+                <% end %>
+              </div>
+
+              <%= if comment_present?(@current_position.comment) and @show_position_comment do %>
+                <div id="position-comment" class="bg-base-300 rounded-lg p-3 mb-4 min-w-0">
+                  <p
+                    class="text-sm opacity-70 whitespace-pre-wrap break-all [overflow-wrap:anywhere]"
+                    phx-no-format
+                  >{String.trim_leading(@current_position.comment)}</p>
                 </div>
               <% end %>
 
@@ -103,7 +122,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           </div>
         </div>
       <% else %>
-        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)]">
           <div>
             <div class="bg-base-200 rounded-xl p-4 flex justify-center">
               <div style="width: min(100%, 720px); height: min(100%, 720px);">
@@ -304,6 +323,11 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   @impl true
+  def handle_event("toggle-position-comment", _params, socket) do
+    {:noreply, update(socket, :show_position_comment, fn show? -> not show? end)}
+  end
+
+  @impl true
   def handle_event("skip", _params, socket) do
     case socket.assigns do
       %{current_position: %Position{}, due_targets: due_targets} when due_targets != [] ->
@@ -377,6 +401,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
             batch_complete?: false,
             remaining_due_count: 0,
             review_mode: review_mode,
+            show_position_comment: false,
             empty_state_message: empty_state_message(review_mode),
             practice_available?:
               practice_available?(
@@ -411,6 +436,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           batch_complete?: false,
           remaining_due_count: 0,
           review_mode: review_mode,
+          show_position_comment: false,
           empty_state_message: empty_state_message(review_mode),
           practice_available?:
             practice_available?(socket.assigns.current_scope, socket.assigns.repertoire.id, side),
@@ -710,6 +736,10 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   defp empty_state_message(:due) do
     "No positions due for review! Come back later or add more moves to your repertoire."
   end
+
+  @spec comment_present?(String.t() | nil) :: boolean()
+  defp comment_present?(comment) when is_binary(comment), do: String.trim(comment) != ""
+  defp comment_present?(_comment), do: false
 
   @spec practice_available?(Bookmoves.Accounts.Scope.t(), pos_integer(), String.t()) :: boolean()
   defp practice_available?(scope, repertoire_id, side) do
