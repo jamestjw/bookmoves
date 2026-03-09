@@ -541,12 +541,13 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         ]) ::
           Phoenix.LiveView.Socket.t()
   defp advance_chain_step(socket, %Position{} = next_due, rest_chain) do
-    %{side: side, remaining_chains: _remaining_chains} = socket.assigns
+    %{side: side, remaining_chains: _remaining_chains, current_due: current_due} = socket.assigns
 
-    case parent_position(
+    case parent_position_for_next_due(
            socket.assigns.current_scope,
            socket.assigns.repertoire.id,
-           next_due.parent_fen,
+           current_due,
+           next_due,
            side
          ) do
       %Position{} = parent ->
@@ -693,6 +694,34 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     else
       Repertoire.get_position_by_fen(scope, repertoire_id, parent_fen)
     end
+  end
+
+  @spec parent_position_for_next_due(
+          Bookmoves.Accounts.Scope.t(),
+          pos_integer(),
+          Position.persisted_t() | nil,
+          Position.persisted_t(),
+          String.t()
+        ) :: Position.t() | nil
+  # TODO: Include opponent transition nodes directly in review chains/batches so
+  # we can advance by explicit node identity and remove this parent lookup.
+  defp parent_position_for_next_due(
+         scope,
+         repertoire_id,
+         %Position{} = current_due,
+         next_due,
+         side
+       ) do
+    parent_from_current_due =
+      current_due
+      |> Repertoire.get_children()
+      |> Enum.find(fn child -> child.fen == next_due.parent_fen end)
+
+    parent_from_current_due || parent_position(scope, repertoire_id, next_due.parent_fen, side)
+  end
+
+  defp parent_position_for_next_due(scope, repertoire_id, _current_due, next_due, side) do
+    parent_position(scope, repertoire_id, next_due.parent_fen, side)
   end
 
   @spec pop_hint_san([String.t()], String.t()) :: {[String.t()], String.t() | nil}

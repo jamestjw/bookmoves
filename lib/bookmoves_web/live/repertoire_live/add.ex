@@ -120,7 +120,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                         class="bg-base-100 rounded-lg p-3 hover:shadow-sm transition cursor-pointer"
                         id={"possible-move-#{child.id}"}
                         phx-click="navigate"
-                        phx-value-fen={child.fen}
+                        phx-value-id={child.id}
                         phx-hook="MovePreview"
                         data-preview-fen={child.fen}
                         data-base-fen={@current_fen}
@@ -251,55 +251,34 @@ defmodule BookmovesWeb.RepertoireLive.Add do
   end
 
   @impl true
-  def handle_event("navigate", %{"fen" => fen}, socket) do
+  def handle_event("navigate", %{"id" => id}, socket) do
     repertoire_id = repertoire_id!(socket)
-    %{side: side, children: children, position_chain: position_chain} = socket.assigns
 
-    child = Enum.find(children, fn position -> position.fen == fen end)
+    %{
+      side: side,
+      position_chain: position_chain,
+      current_scope: current_scope,
+      repertoire: repertoire
+    } = socket.assigns
 
-    if child do
-      new_chain =
-        if is_list(position_chain) and position_chain != [] do
-          position_chain ++ [child]
-        else
-          build_position_chain(socket, child, side)
-        end
+    current_pos = Repertoire.get_position!(current_scope, repertoire_id, id)
 
-      {:noreply, apply_position_state(socket, socket.assigns.repertoire, side, child, new_chain)}
-    else
-      current_pos =
-        Repertoire.get_position_by_fen(
-          socket.assigns.current_scope,
-          repertoire_id,
-          fen
-        )
-
-      if current_pos do
-        position_chain = build_position_chain(socket, current_pos, side)
-
-        {:noreply,
-         apply_position_state(
-           socket,
-           socket.assigns.repertoire,
-           side,
-           current_pos,
-           position_chain
-         )}
+    new_chain =
+      if is_list(position_chain) and position_chain != [] do
+        position_chain ++ [current_pos]
       else
-        {:noreply,
-         socket
-         |> assign(:current_fen, fen)
-         |> assign(:move_notation, "")
-         |> assign(
-           :children,
-           Repertoire.get_children(
-             socket.assigns.current_scope,
-             repertoire_id,
-             fen
-           )
-         )}
+        build_position_chain(socket, current_pos, side)
       end
-    end
+
+    {:noreply, apply_position_state(socket, repertoire, side, current_pos, new_chain)}
+  end
+
+  @deprecated "FEN-based navigate events are deprecated; use position id based navigation"
+  @impl true
+  def handle_event("navigate", %{"fen" => _fen}, socket) do
+    {:noreply,
+     socket
+     |> put_flash(:error, "Navigation by FEN is deprecated. Refresh and navigate by move id.")}
   end
 
   @impl true

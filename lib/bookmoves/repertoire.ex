@@ -11,6 +11,8 @@ defmodule Bookmoves.Repertoire do
   alias Bookmoves.Repertoire.Repertoire, as: UserRepertoire
   alias Bookmoves.Repo
 
+  @existing_key_query_chunk_size 200
+
   @type color_side :: String.t()
   @type stats :: %{total: non_neg_integer(), due: non_neg_integer()}
   @seconds_per_day 24 * 60 * 60
@@ -608,21 +610,9 @@ defmodule Bookmoves.Repertoire do
     total = length(attrs_list)
 
     {unique_attrs, duplicates_in_upload} = dedupe_attrs_by_move_key(attrs_list)
-    candidate_parent_fens = Enum.map(unique_attrs, & &1.parent_fen) |> Enum.uniq()
-    candidate_sans = Enum.map(unique_attrs, & &1.san) |> Enum.uniq()
-    candidate_fens = Enum.map(unique_attrs, & &1.fen) |> Enum.uniq()
+    candidate_keys = Enum.map(unique_attrs, &{&1.parent_fen, &1.san, &1.fen})
 
-    existing_keys =
-      Repo.all(
-        from p in Position,
-          where:
-            p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and
-              p.parent_fen in ^candidate_parent_fens and
-              p.san in ^candidate_sans and
-              p.fen in ^candidate_fens,
-          select: {p.parent_fen, p.san, p.fen}
-      )
-      |> MapSet.new()
+    existing_keys = fetch_existing_keys(user_id, repertoire_id, candidate_keys)
 
     {attrs_to_insert, existing_count} =
       Enum.reduce(unique_attrs, {[], 0}, fn attrs, {acc, count} ->
@@ -662,6 +652,38 @@ defmodule Bookmoves.Repertoire do
       end
     end)
     |> then(fn {acc, _seen, duplicates} -> {Enum.reverse(acc), duplicates} end)
+  end
+
+  @spec fetch_existing_keys(pos_integer(), pos_integer(), [{String.t(), String.t(), String.t()}]) ::
+          MapSet.t({String.t(), String.t(), String.t()})
+  defp fetch_existing_keys(_user_id, _repertoire_id, []), do: MapSet.new()
+
+  defp fetch_existing_keys(user_id, repertoire_id, candidate_keys) do
+    candidate_keys
+    |> Enum.chunk_every(@existing_key_query_chunk_size)
+    |> Enum.reduce(MapSet.new(), fn keys_chunk, acc ->
+      key_filter =
+        Enum.reduce(keys_chunk, dynamic(false), fn {parent_fen, san, fen}, filter_acc ->
+          dynamic(
+            [p],
+            ^filter_acc or
+              (p.parent_fen == ^parent_fen and p.san == ^san and p.fen == ^fen)
+          )
+        end)
+
+      keys =
+        Repo.all(
+          from p in Position,
+            where:
+              ^dynamic(
+                [p],
+                p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and ^key_filter
+              ),
+            select: {p.parent_fen, p.san, p.fen}
+        )
+
+      MapSet.union(acc, MapSet.new(keys))
+    end)
   end
 
   @spec format_notation_with_numbers([String.t()]) :: String.t()
