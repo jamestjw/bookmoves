@@ -145,9 +145,6 @@ defmodule BookmovesWeb.RepertoireLive.Index do
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Repertoire not found")}
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Unable to delete repertoire")}
     end
   end
 
