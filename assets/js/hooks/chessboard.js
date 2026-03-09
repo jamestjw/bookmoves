@@ -20,6 +20,9 @@ export const ChessboardHook = {
     const side = this.el.dataset.orientation || "white";
     const orientation = side === "black" ? COLOR.black : COLOR.white;
     const draggable = this.el.dataset.draggable !== undefined;
+    const rawAnimationDuration = this.el.dataset.animationDuration;
+    const parsedAnimationDuration = Number.parseInt(rawAnimationDuration, 10);
+    const animationDuration = Number.isFinite(parsedAnimationDuration) ? parsedAnimationDuration : 300;
 
     this.currentFen = fen;
     this.chess = new Chess();
@@ -38,7 +41,8 @@ export const ChessboardHook = {
       extensions: [{ class: Arrows }],
       style: {
         cssClass: "blue",
-        borderType: "frame"
+        borderType: "frame",
+        animationDuration: animationDuration
       }
     });
 
@@ -86,12 +90,14 @@ export const ChessboardHook = {
       }, turnColor);
     }
 
-    this.handleEvent("board-reset", ({ fen: resetFen, hintSans }) => {
+    this.handleEvent("board-reset", ({ fen: resetFen, hintSans, animate }) => {
       if (!resetFen || !this.board) return;
+
+      const shouldAnimate = animate === true;
 
       this.currentFen = resetFen;
       this.chess.load(resetFen);
-      this.board.setPosition(resetFen);
+      this.board.setPosition(resetFen, shouldAnimate);
       this.clearHintArrows();
 
       if (Array.isArray(hintSans) && hintSans.length > 0) {

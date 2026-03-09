@@ -6,6 +6,7 @@ defmodule BookmovesWeb.ChessComponents do
   attr :fen, :string, default: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
   attr :orientation, :string, default: "white"
   attr :draggable, :boolean, default: false
+  attr :animation_duration, :integer, default: 300
   attr :class, :string, default: ""
 
   def chessboard(assigns) do
@@ -16,6 +17,7 @@ defmodule BookmovesWeb.ChessComponents do
       data-fen={@fen}
       data-orientation={@orientation}
       data-draggable={@draggable}
+      data-animation-duration={@animation_duration}
       phx-hook="Chessboard"
       phx-update="ignore"
     >

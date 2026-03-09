@@ -47,6 +47,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                   fen={@current_position.fen}
                   orientation={@side}
                   draggable={true}
+                  animation_duration={review_animation_duration_ms()}
                   class="w-full h-full"
                 />
               </div>
@@ -111,6 +112,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                   fen={@root_position.fen}
                   orientation={@side}
                   draggable={false}
+                  animation_duration={review_animation_duration_ms()}
                   class="w-full h-full"
                 />
               </div>
@@ -498,7 +500,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       %Position{} = parent ->
         step = %{board_position: parent, due_targets: [due_position]}
 
-        activate_chain_step(socket, side, remaining_chains, [step], step)
+        activate_chain_step(socket, side, remaining_chains, [step], step, false)
 
       _ ->
         start_review(socket, side, socket.assigns.review_mode)
@@ -523,7 +525,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
          remaining_chains,
          [%{board_position: %Position{}, due_targets: [%Position{} | _]} = step | rest_steps]
        ) do
-    activate_chain_step(socket, side, remaining_chains, [step | rest_steps], step)
+    activate_chain_step(socket, side, remaining_chains, [step | rest_steps], step, false)
   end
 
   defp start_step_chain(socket, side, _remaining_chains, _chain) do
@@ -543,7 +545,15 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           Phoenix.LiveView.Socket.t()
   defp advance_chain_step(socket, %{} = next_step, rest_chain) do
     %{side: side, remaining_chains: remaining_chains} = socket.assigns
-    activate_chain_step(socket, side, remaining_chains, [next_step | rest_chain], next_step)
+
+    activate_chain_step(
+      socket,
+      side,
+      remaining_chains,
+      [next_step | rest_chain],
+      next_step,
+      true
+    )
   end
 
   @spec complete_batch(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
@@ -602,7 +612,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           String.t(),
           list(),
           [review_step()],
-          review_step()
+          review_step(),
+          boolean()
         ) :: Phoenix.LiveView.Socket.t()
   defp activate_chain_step(
          socket,
@@ -612,7 +623,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
          %{
            board_position: %Position{} = parent,
            due_targets: [%Position{} | _] = due_targets
-         }
+         },
+         animate_board?
        ) do
     hint_sans =
       due_targets
@@ -642,12 +654,22 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         batch_complete?: false
       )
 
-    push_event(socket, "board-reset", %{fen: parent.fen, hintSans: hint_sans})
+    push_event(socket, "board-reset", %{
+      fen: parent.fen,
+      hintSans: hint_sans,
+      animate: animate_board?
+    })
   end
 
   @spec batch_size() :: pos_integer()
   defp batch_size do
     Application.get_env(:bookmoves, :review_batch_size, 20)
+  end
+
+  @spec review_animation_duration_ms() :: pos_integer()
+  defp review_animation_duration_ms do
+    # TODO: Add a user preference for piece movement speed and use it here.
+    500
   end
 
   @spec chain_limit() :: pos_integer()
