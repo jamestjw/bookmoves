@@ -7,7 +7,7 @@ defmodule Bookmoves.ReviewBatchTest do
   alias Bookmoves.Repertoire
   alias Bookmoves.ReviewBatch
 
-  test "builds linear chains with chain limit" do
+  test "builds due step chains with chain limit" do
     scope = user_scope_fixture()
     repertoire = repertoire_fixture(scope, %{color_side: "white"})
     root = Repertoire.get_root("white")
@@ -24,7 +24,7 @@ defmodule Bookmoves.ReviewBatchTest do
         next_review_at: past
       })
 
-    {:ok, _opp_one} =
+    {:ok, opp_one} =
       Repertoire.create_position(scope, repertoire.id, %{
         fen: "fen-opp-1",
         san: "e5",
@@ -43,7 +43,7 @@ defmodule Bookmoves.ReviewBatchTest do
         next_review_at: past
       })
 
-    {:ok, _opp_two} =
+    {:ok, opp_two} =
       Repertoire.create_position(scope, repertoire.id, %{
         fen: "fen-opp-2",
         san: "Nc6",
@@ -73,14 +73,22 @@ defmodule Bookmoves.ReviewBatchTest do
       })
 
     chains =
-      ReviewBatch.build_due_chains_batch(scope, repertoire.id, "white",
+      ReviewBatch.build_due_step_chains_batch(scope, repertoire.id, "white",
         batch_size: 10,
         chain_limit: 3,
         now: DateTime.utc_now()
       )
 
     assert length(chains) >= 2
-    assert Enum.at(chains, 0) == [user_one, user_two, user_three]
-    assert Enum.any?(chains, fn chain -> chain == [sibling_due] end)
+
+    assert Enum.at(chains, 0) == [
+             %{board_position: root, due_targets: [user_one]},
+             %{board_position: opp_one, due_targets: [user_two]},
+             %{board_position: opp_two, due_targets: [user_three]}
+           ]
+
+    assert Enum.any?(chains, fn chain ->
+             chain == [%{board_position: root, due_targets: [sibling_due]}]
+           end)
   end
 end
