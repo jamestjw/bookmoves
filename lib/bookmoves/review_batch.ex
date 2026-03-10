@@ -50,7 +50,7 @@ defmodule Bookmoves.ReviewBatch do
   @spec build_due_step_chains_batch(
           Scope.t(),
           pos_integer(),
-          String.t(),
+          Repertoire.color_side(),
           DateTime.t(),
           non_neg_integer(),
           non_neg_integer(),
@@ -58,6 +58,21 @@ defmodule Bookmoves.ReviewBatch do
           [step_chain()],
           non_neg_integer()
         ) :: [step_chain()]
+  defp build_due_step_chains_batch(
+         _scope,
+         _repertoire_id,
+         _side,
+         _now,
+         batch_size,
+         _chain_limit,
+         _selected_ids,
+         chains,
+         total_count
+       )
+       when total_count >= batch_size do
+    chains
+  end
+
   defp build_due_step_chains_batch(
          scope,
          repertoire_id,
@@ -69,66 +84,65 @@ defmodule Bookmoves.ReviewBatch do
          chains,
          total_count
        ) do
-    if total_count >= batch_size do
-      chains
-    else
-      next_position =
-        Repertoire.get_next_due_position_for_side(
-          scope,
-          repertoire_id,
-          side,
-          now,
-          MapSet.to_list(selected_ids)
-        )
+    next_position =
+      Repertoire.get_next_due_position_for_side(
+        scope,
+        repertoire_id,
+        side,
+        now,
+        MapSet.to_list(selected_ids)
+      )
 
-      case next_position do
-        nil ->
-          chains
+    case next_position do
+      nil ->
+        chains
 
-        %Position{} = position ->
-          case parent_position(scope, repertoire_id, side, position.parent_fen) do
-            %Position{} = parent ->
-              {chain, selected_ids, total_count} =
-                build_step_chain(
-                  scope,
-                  repertoire_id,
-                  position,
-                  side,
-                  now,
-                  selected_ids,
-                  [],
-                  total_count,
-                  batch_size,
-                  chain_limit,
-                  parent
-                )
-
-              build_due_step_chains_batch(
+      %Position{} = position ->
+        case parent_position(scope, repertoire_id, side, position.parent_fen) do
+          %Position{} = parent ->
+            {chain, selected_ids, total_count} =
+              build_step_chain(
                 scope,
                 repertoire_id,
+                position,
                 side,
                 now,
-                batch_size,
-                chain_limit,
                 selected_ids,
-                chains ++ [chain],
-                total_count
-              )
-
-            _ ->
-              build_due_step_chains_batch(
-                scope,
-                repertoire_id,
-                side,
-                now,
+                [],
+                total_count,
                 batch_size,
                 chain_limit,
-                MapSet.put(selected_ids, position.id),
-                chains,
-                total_count
+                parent
               )
-          end
-      end
+
+            build_due_step_chains_batch(
+              scope,
+              repertoire_id,
+              side,
+              now,
+              batch_size,
+              chain_limit,
+              selected_ids,
+              chains ++ [chain],
+              total_count
+            )
+
+          _ ->
+            # If somehow the due position has no parent, we just keep going. This is
+            # just for the sake of completeness, this shouldn't really happen. We can
+            # also consider just panicking here.
+            build_due_step_chains_batch(
+              scope,
+              repertoire_id,
+              side,
+              now,
+              batch_size,
+              chain_limit,
+              MapSet.put(selected_ids, position.id),
+              chains,
+              total_count
+            )
+        end
     end
   end
 
@@ -136,7 +150,7 @@ defmodule Bookmoves.ReviewBatch do
           Scope.t(),
           pos_integer(),
           Position.persisted_t(),
-          String.t(),
+          Repertoire.color_side(),
           DateTime.t(),
           MapSet.t(pos_integer()),
           [review_step()],
@@ -145,6 +159,40 @@ defmodule Bookmoves.ReviewBatch do
           non_neg_integer(),
           Position.t()
         ) :: {[review_step()], MapSet.t(pos_integer()), non_neg_integer()}
+  defp build_step_chain(
+         _scope,
+         _repertoire_id,
+         _position,
+         _side,
+         _now,
+         selected_ids,
+         acc,
+         total_count,
+         batch_size,
+         _remaining,
+         _board_position
+       )
+       when total_count >= batch_size do
+    {acc, selected_ids, total_count}
+  end
+
+  defp build_step_chain(
+         _scope,
+         _repertoire_id,
+         _position,
+         _side,
+         _now,
+         selected_ids,
+         acc,
+         total_count,
+         _batch_size,
+         remaining,
+         _board_position
+       )
+       when remaining <= 0 do
+    {acc, selected_ids, total_count}
+  end
+
   defp build_step_chain(
          scope,
          repertoire_id,
@@ -158,52 +206,49 @@ defmodule Bookmoves.ReviewBatch do
          remaining,
          %Position{} = board_position
        ) do
-    if total_count >= batch_size or remaining <= 0 do
-      {acc, selected_ids, total_count}
-    else
-      selected_ids = MapSet.put(selected_ids, position.id)
-      acc = acc ++ [%{board_position: board_position, due_targets: [position]}]
-      total_count = total_count + 1
+    selected_ids = MapSet.put(selected_ids, position.id)
+    acc = acc ++ [%{board_position: board_position, due_targets: [position]}]
+    total_count = total_count + 1
 
-      {opponent_move, opponent_san} = auto_reply(position)
+    {opponent_move, opponent_san} = auto_reply(position)
 
-      next_due =
-        if is_binary(opponent_san) do
-          Repertoire.get_next_due_child_for_side(
-            scope,
-            repertoire_id,
-            opponent_move.fen,
-            side,
-            now,
-            MapSet.to_list(selected_ids)
-          )
-        else
-          nil
-        end
-
-      case next_due do
-        nil ->
-          {acc, selected_ids, total_count}
-
-        %Position{} = child ->
-          build_step_chain(
-            scope,
-            repertoire_id,
-            child,
-            side,
-            now,
-            selected_ids,
-            acc,
-            total_count,
-            batch_size,
-            remaining - 1,
-            opponent_move
-          )
+    next_due =
+      if is_binary(opponent_san) do
+        Repertoire.get_next_due_child_for_side(
+          scope,
+          repertoire_id,
+          opponent_move.fen,
+          side,
+          now,
+          MapSet.to_list(selected_ids)
+        )
+      else
+        nil
       end
+
+    case next_due do
+      nil ->
+        {acc, selected_ids, total_count}
+
+      %Position{} = child ->
+        build_step_chain(
+          scope,
+          repertoire_id,
+          child,
+          side,
+          now,
+          selected_ids,
+          acc,
+          total_count,
+          batch_size,
+          remaining - 1,
+          opponent_move
+        )
     end
   end
 
-  @spec parent_position(Scope.t(), pos_integer(), String.t(), String.t()) :: Position.t() | nil
+  @spec parent_position(Scope.t(), pos_integer(), Repertoire.color_side(), String.t()) ::
+          Position.t() | nil
   defp parent_position(scope, repertoire_id, side, parent_fen) do
     if parent_fen == Position.starting_fen() do
       Repertoire.get_root(side)
