@@ -391,6 +391,9 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/import-pgn")
 
+      assert has_element?(view, "#lichess-study-form")
+      assert has_element?(view, "#lichess-study-url")
+
       upload =
         file_input(view, "#pgn-import-form", :pgn_file, [
           %{
