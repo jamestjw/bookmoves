@@ -16,7 +16,7 @@ defmodule Bookmoves.ReviewBatchTest do
 
     {:ok, user_one} =
       Repertoire.create_position(scope, repertoire.id, %{
-        fen: "fen-user-1",
+        fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
         san: "e4",
         parent_fen: root.fen,
         color_side: "white",
@@ -26,7 +26,7 @@ defmodule Bookmoves.ReviewBatchTest do
 
     {:ok, opp_one} =
       Repertoire.create_position(scope, repertoire.id, %{
-        fen: "fen-opp-1",
+        fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
         san: "e5",
         parent_fen: user_one.fen,
         color_side: "white",
@@ -35,9 +35,9 @@ defmodule Bookmoves.ReviewBatchTest do
 
     {:ok, user_two} =
       Repertoire.create_position(scope, repertoire.id, %{
-        fen: "fen-user-2",
+        fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
         san: "Nf3",
-        parent_fen: "fen-opp-1",
+        parent_fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
         color_side: "white",
         move_color: "white",
         next_review_at: past
@@ -45,7 +45,7 @@ defmodule Bookmoves.ReviewBatchTest do
 
     {:ok, opp_two} =
       Repertoire.create_position(scope, repertoire.id, %{
-        fen: "fen-opp-2",
+        fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
         san: "Nc6",
         parent_fen: user_two.fen,
         color_side: "white",
@@ -54,9 +54,9 @@ defmodule Bookmoves.ReviewBatchTest do
 
     {:ok, user_three} =
       Repertoire.create_position(scope, repertoire.id, %{
-        fen: "fen-user-3",
+        fen: "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
         san: "Bb5",
-        parent_fen: "fen-opp-2",
+        parent_fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
         color_side: "white",
         move_color: "white",
         next_review_at: past
@@ -64,7 +64,7 @@ defmodule Bookmoves.ReviewBatchTest do
 
     {:ok, sibling_due} =
       Repertoire.create_position(scope, repertoire.id, %{
-        fen: "fen-user-sibling",
+        fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
         san: "d4",
         parent_fen: root.fen,
         color_side: "white",

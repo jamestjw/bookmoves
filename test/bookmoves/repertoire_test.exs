@@ -130,6 +130,40 @@ defmodule Bookmoves.RepertoireTest do
       assert updated.comment == "main line"
     end
 
+    test "create_position rejects illegal SAN for parent FEN", %{
+      scope: scope,
+      repertoire: repertoire
+    } do
+      root = white_root_fixture()
+
+      assert {:error, changeset} =
+               Repertoire.create_position(scope, repertoire.id, %{
+                 fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+                 san: "e5",
+                 parent_fen: root.fen,
+                 color_side: "white"
+               })
+
+      assert "is not legal from the provided parent position" in errors_on(changeset).san
+    end
+
+    test "create_position rejects mismatched resulting FEN", %{
+      scope: scope,
+      repertoire: repertoire
+    } do
+      root = white_root_fixture()
+
+      assert {:error, changeset} =
+               Repertoire.create_position(scope, repertoire.id, %{
+                 fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+                 san: "d4",
+                 parent_fen: root.fen,
+                 color_side: "white"
+               })
+
+      assert "does not match SAN result for the provided parent position" in errors_on(changeset).fen
+    end
+
     test "delete_position removes descendants in the same repertoire", %{
       scope: scope,
       repertoire: repertoire

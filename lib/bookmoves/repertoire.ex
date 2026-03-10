@@ -10,6 +10,7 @@ defmodule Bookmoves.Repertoire do
   alias Bookmoves.Repertoire.PgnImport
   alias Bookmoves.Repertoire.Repertoire, as: UserRepertoire
   alias Bookmoves.Repo
+  alias ChessLogic.Position, as: ChessPosition
 
   @existing_key_query_chunk_size 200
 
@@ -239,11 +240,19 @@ defmodule Bookmoves.Repertoire do
   def create_position(%Scope{} = scope, repertoire_id, attrs) do
     {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
 
-    %Position{}
-    |> Position.changeset(attrs)
-    |> Ecto.Changeset.put_change(:user_id, user_id)
-    |> Ecto.Changeset.put_change(:repertoire_id, repertoire_id)
-    |> Repo.insert()
+    with :ok <- validate_move_transition(attrs) do
+      %Position{}
+      |> Position.changeset(attrs)
+      |> Ecto.Changeset.put_change(:user_id, user_id)
+      |> Ecto.Changeset.put_change(:repertoire_id, repertoire_id)
+      |> Repo.insert()
+    else
+      {:error, {field, message}} ->
+        {:error,
+         %Position{}
+         |> Position.changeset(attrs)
+         |> Ecto.Changeset.add_error(field, message)}
+    end
   end
 
   @spec create_position_if_not_exists(Scope.t(), pos_integer(), Position.attrs()) ::
@@ -285,6 +294,59 @@ defmodule Bookmoves.Repertoire do
   end
 
   defp get_position_by_move_key(_scope, _repertoire_id, _parent_fen, _san, _fen), do: nil
+
+  @spec validate_move_transition(map()) :: :ok | {:error, {:parent_fen | :san | :fen, String.t()}}
+  defp validate_move_transition(%{parent_fen: parent_fen, san: san, fen: fen})
+       when is_binary(parent_fen) and is_binary(san) and is_binary(fen) do
+    if valid_fen_string?(parent_fen) do
+      try do
+        game = ChessLogic.new_game(parent_fen)
+
+        case ChessLogic.play(game, san) do
+          {:ok, updated_game} ->
+            expected_fen = ChessPosition.to_fen(updated_game.current_position)
+
+            if fen_matches_move_result?(expected_fen, fen) do
+              :ok
+            else
+              {:error, {:fen, "does not match SAN result for the provided parent position"}}
+            end
+
+          {:error, _reason} ->
+            {:error, {:san, "is not legal from the provided parent position"}}
+        end
+      rescue
+        _ -> {:error, {:parent_fen, "is not a valid FEN"}}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp validate_move_transition(_attrs),
+    do: {:error, {:parent_fen, "fields missing for move validation"}}
+
+  @spec valid_fen_string?(String.t()) :: boolean()
+  defp valid_fen_string?(fen) when is_binary(fen) do
+    length(String.split(fen, " ", trim: true)) == 6
+  end
+
+  @spec fen_matches_move_result?(String.t(), String.t()) :: boolean()
+  defp fen_matches_move_result?(expected_fen, provided_fen)
+       when is_binary(expected_fen) and is_binary(provided_fen) do
+    expected_parts = String.split(expected_fen, " ", trim: true)
+    provided_parts = String.split(provided_fen, " ", trim: true)
+
+    case {expected_parts, provided_parts} do
+      {[exp_board, exp_side, exp_castling, exp_ep, _exp_half, _exp_full],
+       [got_board, got_side, got_castling, got_ep, _got_half, _got_full]} ->
+        exp_board == got_board and exp_side == got_side and exp_castling == got_castling and
+          (exp_ep == got_ep or got_ep == "-")
+
+      _ ->
+        false
+    end
+  end
 
   @spec get_position_chain(Scope.t(), pos_integer(), String.t()) :: [Position.persisted_t()]
   def get_position_chain(%Scope{} = scope, repertoire_id, fen) when is_binary(fen) do
