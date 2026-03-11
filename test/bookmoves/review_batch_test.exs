@@ -94,38 +94,10 @@ defmodule Bookmoves.ReviewBatchTest do
 
   test "build_due_step_chains_batch scopes by subtree_ids" do
     scope = user_scope_fixture()
-    repertoire = repertoire_fixture(scope, %{color_side: "white"})
-    root = Repertoire.get_root("white")
-    past = DateTime.add(DateTime.utc_now(), -60, :second)
-
-    {:ok, e4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-        san: "e4",
-        parent_fen: root.fen,
-        color_side: "white",
-        move_color: "white",
-        next_review_at: past
-      })
-
-    {:ok, _e5} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
-        san: "e5",
-        parent_fen: e4.fen,
-        color_side: "white",
-        move_color: "black"
-      })
-
-    {:ok, d4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
-        san: "d4",
-        parent_fen: root.fen,
-        color_side: "white",
-        move_color: "white",
-        next_review_at: past
-      })
+    repertoire = french_tarrasch_and_winawer_repertoire_fixture(scope)
+    positions = Repertoire.list_positions(scope, repertoire.id)
+    d4 = find_position_by_san!(positions, "d4")
+    e6 = find_position_by_san!(positions, "e6")
 
     chains =
       ReviewBatch.build_due_step_chains_batch(scope, repertoire.id, "white",
@@ -135,90 +107,27 @@ defmodule Bookmoves.ReviewBatchTest do
         subtree_ids: [d4.id]
       )
 
-    assert chains == [[%{board_position: root, due_targets: [d4]}]]
+    assert chains == [[%{board_position: e6, due_targets: [d4]}]]
   end
 
   test "build_practice_chains_batch scopes by subtree_ids" do
     scope = user_scope_fixture()
-    repertoire = repertoire_fixture(scope, %{color_side: "white"})
-    root = Repertoire.get_root("white")
+    repertoire = french_tarrasch_and_winawer_repertoire_fixture(scope)
+    positions = Repertoire.list_positions(scope, repertoire.id)
+    d4 = find_position_by_san!(positions, "d4")
+    nd2 = find_position_by_san!(positions, "Nd2")
+    nc3 = find_position_by_san!(positions, "Nc3")
+    nf6 = find_position_by_san!(positions, "Nf6")
+    bb4 = find_position_by_san!(positions, "Bb4")
+    e5_tarrasch = find_position_by_parent_fen_and_san!(positions, nf6.fen, "e5")
+    e5_winawer = find_position_by_parent_fen_and_san!(positions, bb4.fen, "e5")
 
-    {:ok, e4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-        san: "e4",
-        parent_fen: root.fen,
-        color_side: "white",
-        move_color: "white"
-      })
-
-    {:ok, _e5} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
-        san: "e5",
-        parent_fen: e4.fen,
-        color_side: "white",
-        move_color: "black"
-      })
-
-    {:ok, _nf3} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
-        san: "Nf3",
-        parent_fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
-        color_side: "white",
-        move_color: "white"
-      })
-
-    {:ok, d4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
-        san: "d4",
-        parent_fen: root.fen,
-        color_side: "white",
-        move_color: "white"
-      })
-
-    {:ok, d5} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2",
-        san: "d5",
-        parent_fen: d4.fen,
-        color_side: "white",
-        move_color: "black"
-      })
-
-    {:ok, c4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq - 0 2",
-        san: "c4",
-        parent_fen: d5.fen,
-        color_side: "white",
-        move_color: "white"
-      })
-
-    {:ok, e6} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq - 0 3",
-        san: "e6",
-        parent_fen: c4.fen,
-        color_side: "white",
-        move_color: "black"
-      })
-
-    {:ok, nc3} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq - 1 3",
-        san: "Nc3",
-        parent_fen: e6.fen,
-        color_side: "white",
-        move_color: "white"
-      })
+    subtree_ids = Repertoire.list_subtree_position_ids(scope, repertoire.id, d4.id)
 
     chains =
       ReviewBatch.build_practice_chains_batch(scope, repertoire.id, "white",
         batch_size: 10,
-        subtree_ids: [d4.id, d5.id, c4.id, e6.id, nc3.id]
+        subtree_ids: subtree_ids
       )
 
     chain_ids =
@@ -226,43 +135,25 @@ defmodule Bookmoves.ReviewBatchTest do
       |> Enum.map(fn [position] -> position.id end)
       |> Enum.sort()
 
-    assert chain_ids == Enum.sort([d4.id, c4.id, nc3.id])
+    assert chain_ids == Enum.sort([d4.id, nd2.id, e5_tarrasch.id, nc3.id, e5_winawer.id])
   end
 
   test "build_due_step_chains_batch_for_subtree scopes by review_root_position_id" do
     scope = user_scope_fixture()
-    repertoire = repertoire_fixture(scope, %{color_side: "white"})
-    root = Repertoire.get_root("white")
-    past = DateTime.add(DateTime.utc_now(), -60, :second)
-
-    {:ok, e4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-        san: "e4",
-        parent_fen: root.fen,
-        color_side: "white",
-        move_color: "white",
-        next_review_at: past
-      })
-
-    {:ok, d4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
-        san: "d4",
-        parent_fen: root.fen,
-        color_side: "white",
-        move_color: "white",
-        next_review_at: past
-      })
+    repertoire = french_tarrasch_and_winawer_repertoire_fixture(scope)
+    positions = Repertoire.list_positions(scope, repertoire.id)
+    d4 = find_position_by_san!(positions, "d4")
+    e6 = find_position_by_san!(positions, "e6")
+    e4 = find_position_by_san!(positions, "e4")
 
     chains =
       ReviewBatch.build_due_step_chains_batch_for_subtree(scope, repertoire.id, "white", d4.id,
-        batch_size: 10,
+        batch_size: 1,
         chain_limit: 3,
         now: DateTime.utc_now()
       )
 
-    assert chains == [[%{board_position: root, due_targets: [d4]}]]
+    assert chains == [[%{board_position: e6, due_targets: [d4]}]]
 
     missing_position_id = max(e4.id, d4.id) + 100_000
 
@@ -282,35 +173,26 @@ defmodule Bookmoves.ReviewBatchTest do
 
   test "build_practice_chains_batch_for_subtree scopes by review_root_position_id" do
     scope = user_scope_fixture()
-    repertoire = repertoire_fixture(scope, %{color_side: "white"})
-    root = Repertoire.get_root("white")
-
-    {:ok, e4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-        san: "e4",
-        parent_fen: root.fen,
-        color_side: "white",
-        move_color: "white"
-      })
-
-    {:ok, d4} =
-      Repertoire.create_position(scope, repertoire.id, %{
-        fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
-        san: "d4",
-        parent_fen: root.fen,
-        color_side: "white",
-        move_color: "white"
-      })
+    repertoire = french_tarrasch_and_winawer_repertoire_fixture(scope)
+    positions = Repertoire.list_positions(scope, repertoire.id)
+    nc3 = find_position_by_san!(positions, "Nc3")
+    bb4 = find_position_by_san!(positions, "Bb4")
+    e5_winawer = find_position_by_parent_fen_and_san!(positions, bb4.fen, "e5")
+    e4 = find_position_by_san!(positions, "e4")
 
     chains =
-      ReviewBatch.build_practice_chains_batch_for_subtree(scope, repertoire.id, "white", d4.id,
+      ReviewBatch.build_practice_chains_batch_for_subtree(scope, repertoire.id, "white", nc3.id,
         batch_size: 10
       )
 
-    assert chains == [[d4]]
+    chain_ids =
+      chains
+      |> Enum.map(fn [position] -> position.id end)
+      |> Enum.sort()
 
-    missing_position_id = max(e4.id, d4.id) + 100_000
+    assert chain_ids == Enum.sort([nc3.id, e5_winawer.id])
+
+    missing_position_id = max(e4.id, nc3.id) + 100_000
 
     empty_chains =
       ReviewBatch.build_practice_chains_batch_for_subtree(
@@ -322,5 +204,14 @@ defmodule Bookmoves.ReviewBatchTest do
       )
 
     assert empty_chains == []
+  end
+
+  defp find_position_by_san!(positions, san) do
+    Enum.find(positions, &(&1.san == san)) || raise "position with SAN #{san} not found"
+  end
+
+  defp find_position_by_parent_fen_and_san!(positions, parent_fen, san) do
+    Enum.find(positions, &(&1.parent_fen == parent_fen and &1.san == san)) ||
+      raise "position with SAN #{san} and parent FEN #{parent_fen} not found"
   end
 end
