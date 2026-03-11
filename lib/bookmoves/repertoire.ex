@@ -117,8 +117,9 @@ defmodule Bookmoves.Repertoire do
       )
       when color_side in ["white", "black"] do
     limit = Keyword.get(opts, :limit)
+    subtree_ids = Keyword.get(opts, :subtree_ids)
 
-    due_positions_query(scope, repertoire_id, color_side, now)
+    due_positions_query(scope, repertoire_id, color_side, now, subtree_ids: subtree_ids)
     |> order_by([p], asc: p.next_review_at, asc: p.id)
     |> maybe_limit(limit)
     |> Repo.all()
@@ -129,17 +130,21 @@ defmodule Bookmoves.Repertoire do
           pos_integer(),
           color_side(),
           DateTime.t(),
-          [pos_integer()]
+          [pos_integer()],
+          keyword()
         ) :: Position.persisted_t() | nil
   def get_next_due_position_for_side(
         %Scope{} = scope,
         repertoire_id,
         color_side,
         now \\ DateTime.utc_now(),
-        exclude_ids \\ []
+        exclude_ids \\ [],
+        opts \\ []
       )
       when color_side in ["white", "black"] do
-    due_positions_query(scope, repertoire_id, color_side, now)
+    subtree_ids = Keyword.get(opts, :subtree_ids)
+
+    due_positions_query(scope, repertoire_id, color_side, now, subtree_ids: subtree_ids)
     |> maybe_exclude_ids(exclude_ids)
     |> order_by([p], asc: p.next_review_at, asc: p.id)
     |> limit(1)
@@ -152,7 +157,8 @@ defmodule Bookmoves.Repertoire do
           String.t(),
           color_side(),
           DateTime.t(),
-          [pos_integer()]
+          [pos_integer()],
+          keyword()
         ) :: Position.persisted_t() | nil
   def get_next_due_child_for_side(
         %Scope{} = scope,
@@ -160,9 +166,11 @@ defmodule Bookmoves.Repertoire do
         parent_fen,
         color_side,
         now \\ DateTime.utc_now(),
-        exclude_ids \\ []
+        exclude_ids \\ [],
+        opts \\ []
       )
       when is_binary(parent_fen) and color_side in ["white", "black"] do
+    subtree_ids = Keyword.get(opts, :subtree_ids)
     {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
 
     from(p in Position,
@@ -171,6 +179,7 @@ defmodule Bookmoves.Repertoire do
           p.parent_fen == ^parent_fen and
           p.move_color == ^color_side and p.next_review_at <= ^now
     )
+    |> maybe_filter_subtree_ids(subtree_ids)
     |> maybe_exclude_ids(exclude_ids)
     |> order_by([p], asc: p.next_review_at, asc: p.id)
     |> limit(1)
@@ -615,42 +624,55 @@ defmodule Bookmoves.Repertoire do
       when color_side in ["white", "black"] do
     limit = Keyword.get(opts, :limit, 20)
     exclude_ids = Keyword.get(opts, :exclude_ids, [])
+    subtree_ids = Keyword.get(opts, :subtree_ids)
 
-    practice_positions_query(scope, repertoire_id, color_side)
+    practice_positions_query(scope, repertoire_id, color_side, subtree_ids: subtree_ids)
     |> maybe_exclude_ids(exclude_ids)
     |> order_by([p], fragment("RANDOM()"))
     |> limit(^limit)
     |> Repo.all()
   end
 
-  @spec count_practice_positions_for_side(Scope.t(), pos_integer(), color_side()) ::
+  @spec count_practice_positions_for_side(Scope.t(), pos_integer(), color_side(), keyword()) ::
           non_neg_integer()
-  def count_practice_positions_for_side(%Scope{} = scope, repertoire_id, color_side)
+  def count_practice_positions_for_side(%Scope{} = scope, repertoire_id, color_side, opts \\ [])
       when color_side in ["white", "black"] do
-    practice_positions_query(scope, repertoire_id, color_side)
+    subtree_ids = Keyword.get(opts, :subtree_ids)
+
+    practice_positions_query(scope, repertoire_id, color_side, subtree_ids: subtree_ids)
     |> select([p], count(p.id))
     |> Repo.one()
     |> Kernel.||(0)
   end
 
-  @spec count_due_positions_for_side(Scope.t(), pos_integer(), color_side(), DateTime.t()) ::
+  @spec count_due_positions_for_side(
+          Scope.t(),
+          pos_integer(),
+          color_side(),
+          DateTime.t(),
+          keyword()
+        ) ::
           non_neg_integer()
   def count_due_positions_for_side(
         %Scope{} = scope,
         repertoire_id,
         color_side,
-        now \\ DateTime.utc_now()
+        now \\ DateTime.utc_now(),
+        opts \\ []
       )
       when color_side in ["white", "black"] do
-    due_positions_query(scope, repertoire_id, color_side, now)
+    subtree_ids = Keyword.get(opts, :subtree_ids)
+
+    due_positions_query(scope, repertoire_id, color_side, now, subtree_ids: subtree_ids)
     |> select([p], count(p.id))
     |> Repo.one()
     |> Kernel.||(0)
   end
 
-  @spec due_positions_query(Scope.t(), pos_integer(), color_side(), DateTime.t()) ::
+  @spec due_positions_query(Scope.t(), pos_integer(), color_side(), DateTime.t(), keyword()) ::
           Ecto.Query.t()
-  defp due_positions_query(%Scope{} = scope, repertoire_id, color_side, now) do
+  defp due_positions_query(%Scope{} = scope, repertoire_id, color_side, now, opts) do
+    subtree_ids = Keyword.get(opts, :subtree_ids)
     {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
 
     from(p in Position,
@@ -659,10 +681,13 @@ defmodule Bookmoves.Repertoire do
           p.move_color == ^color_side and
           p.next_review_at <= ^now
     )
+    |> maybe_filter_subtree_ids(subtree_ids)
   end
 
-  @spec practice_positions_query(Scope.t(), pos_integer(), color_side()) :: Ecto.Query.t()
-  defp practice_positions_query(%Scope{} = scope, repertoire_id, color_side) do
+  @spec practice_positions_query(Scope.t(), pos_integer(), color_side(), keyword()) ::
+          Ecto.Query.t()
+  defp practice_positions_query(%Scope{} = scope, repertoire_id, color_side, opts) do
+    subtree_ids = Keyword.get(opts, :subtree_ids)
     {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
 
     from(p in Position,
@@ -671,6 +696,7 @@ defmodule Bookmoves.Repertoire do
           p.move_color == ^color_side and
           not is_nil(p.parent_fen)
     )
+    |> maybe_filter_subtree_ids(subtree_ids)
   end
 
   defp maybe_limit(query, nil), do: query
@@ -683,6 +709,16 @@ defmodule Bookmoves.Repertoire do
 
   defp maybe_exclude_ids(query, exclude_ids) do
     from(p in query, where: p.id not in ^exclude_ids)
+  end
+
+  defp maybe_filter_subtree_ids(query, nil), do: query
+
+  defp maybe_filter_subtree_ids(query, []) do
+    from(p in query, where: false)
+  end
+
+  defp maybe_filter_subtree_ids(query, subtree_ids) when is_list(subtree_ids) do
+    from(p in query, where: p.id in ^subtree_ids)
   end
 
   @spec import_positions(Scope.t(), pos_integer(), [Position.attrs()]) ::

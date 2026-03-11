@@ -19,6 +19,10 @@ defmodule Bookmoves.ReviewBatch do
     batch_size = Keyword.get(opts, :batch_size, 20)
     chain_limit = Keyword.get(opts, :chain_limit, 3)
 
+    # TODO: When subtree-scoped review is added, compute subtree IDs once per batch build
+    # and reuse them across all query calls in this function. Consider a closure table for
+    # persistent fast subtree lookups, or ETS for per-session/per-batch caching.
+
     build_due_step_chains_batch(
       scope,
       repertoire_id,
