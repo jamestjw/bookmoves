@@ -355,5 +355,58 @@ defmodule Bookmoves.RepertoireTest do
                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
              ]
     end
+
+    test "due and practice queries accept optional subtree_ids", %{
+      scope: scope,
+      repertoire: repertoire
+    } do
+      now = DateTime.utc_now()
+      root = white_root_fixture()
+
+      {:ok, e4} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: DateTime.add(now, -60, :second)
+        })
+
+      {:ok, d4} =
+        Repertoire.create_position(scope, repertoire.id, %{
+          fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+          san: "d4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: DateTime.add(now, -60, :second)
+        })
+
+      scoped_due =
+        Repertoire.list_due_positions_for_side(scope, repertoire.id, "white", now,
+          subtree_ids: [e4.id]
+        )
+
+      assert Enum.map(scoped_due, & &1.id) == [e4.id]
+
+      assert Repertoire.count_due_positions_for_side(scope, repertoire.id, "white", now,
+               subtree_ids: [e4.id]
+             ) == 1
+
+      assert Repertoire.count_due_positions_for_side(scope, repertoire.id, "white", now,
+               subtree_ids: []
+             ) == 0
+
+      assert Repertoire.count_practice_positions_for_side(scope, repertoire.id, "white",
+               subtree_ids: [d4.id]
+             ) == 1
+
+      scoped_practice =
+        Repertoire.list_random_positions_for_side(scope, repertoire.id, "white",
+          limit: 10,
+          subtree_ids: [d4.id]
+        )
+
+      assert Enum.map(scoped_practice, & &1.id) == [d4.id]
+    end
   end
 end
