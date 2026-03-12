@@ -91,4 +91,127 @@ defmodule Bookmoves.ReviewBatchTest do
              chain == [%{board_position: root, due_targets: [sibling_due]}]
            end)
   end
+
+  test "build_due_step_chains_batch scopes by subtree_ids" do
+    scope = user_scope_fixture()
+    repertoire = french_tarrasch_and_winawer_repertoire_fixture(scope)
+    positions = Repertoire.list_positions(scope, repertoire.id)
+    d4 = find_position_by_san!(positions, "d4")
+    e6 = find_position_by_san!(positions, "e6")
+
+    chains =
+      ReviewBatch.build_due_step_chains_batch(scope, repertoire.id, "white",
+        batch_size: 10,
+        chain_limit: 3,
+        now: DateTime.utc_now(),
+        subtree_ids: [d4.id]
+      )
+
+    assert chains == [[%{board_position: e6, due_targets: [d4]}]]
+  end
+
+  test "build_practice_chains_batch scopes by subtree_ids" do
+    scope = user_scope_fixture()
+    repertoire = french_tarrasch_and_winawer_repertoire_fixture(scope)
+    positions = Repertoire.list_positions(scope, repertoire.id)
+    d4 = find_position_by_san!(positions, "d4")
+    nd2 = find_position_by_san!(positions, "Nd2")
+    nc3 = find_position_by_san!(positions, "Nc3")
+    nf6 = find_position_by_san!(positions, "Nf6")
+    bb4 = find_position_by_san!(positions, "Bb4")
+    e5_tarrasch = find_position_by_parent_fen_and_san!(positions, nf6.fen, "e5")
+    e5_winawer = find_position_by_parent_fen_and_san!(positions, bb4.fen, "e5")
+
+    subtree_ids = Repertoire.list_subtree_position_ids(scope, repertoire.id, d4.id)
+
+    chains =
+      ReviewBatch.build_practice_chains_batch(scope, repertoire.id, "white",
+        batch_size: 10,
+        subtree_ids: subtree_ids
+      )
+
+    chain_ids =
+      chains
+      |> Enum.map(fn [position] -> position.id end)
+      |> Enum.sort()
+
+    assert chain_ids == Enum.sort([d4.id, nd2.id, e5_tarrasch.id, nc3.id, e5_winawer.id])
+  end
+
+  test "build_due_step_chains_batch_for_subtree scopes by review_root_position_id" do
+    scope = user_scope_fixture()
+    repertoire = french_tarrasch_and_winawer_repertoire_fixture(scope)
+    positions = Repertoire.list_positions(scope, repertoire.id)
+    d4 = find_position_by_san!(positions, "d4")
+    e6 = find_position_by_san!(positions, "e6")
+    e4 = find_position_by_san!(positions, "e4")
+
+    chains =
+      ReviewBatch.build_due_step_chains_batch_for_subtree(scope, repertoire.id, "white", d4.id,
+        batch_size: 1,
+        chain_limit: 3,
+        now: DateTime.utc_now()
+      )
+
+    assert chains == [[%{board_position: e6, due_targets: [d4]}]]
+
+    missing_position_id = max(e4.id, d4.id) + 100_000
+
+    empty_chains =
+      ReviewBatch.build_due_step_chains_batch_for_subtree(
+        scope,
+        repertoire.id,
+        "white",
+        missing_position_id,
+        batch_size: 10,
+        chain_limit: 3,
+        now: DateTime.utc_now()
+      )
+
+    assert empty_chains == []
+  end
+
+  test "build_practice_chains_batch_for_subtree scopes by review_root_position_id" do
+    scope = user_scope_fixture()
+    repertoire = french_tarrasch_and_winawer_repertoire_fixture(scope)
+    positions = Repertoire.list_positions(scope, repertoire.id)
+    nc3 = find_position_by_san!(positions, "Nc3")
+    bb4 = find_position_by_san!(positions, "Bb4")
+    e5_winawer = find_position_by_parent_fen_and_san!(positions, bb4.fen, "e5")
+    e4 = find_position_by_san!(positions, "e4")
+
+    chains =
+      ReviewBatch.build_practice_chains_batch_for_subtree(scope, repertoire.id, "white", nc3.id,
+        batch_size: 10
+      )
+
+    chain_ids =
+      chains
+      |> Enum.map(fn [position] -> position.id end)
+      |> Enum.sort()
+
+    assert chain_ids == Enum.sort([nc3.id, e5_winawer.id])
+
+    missing_position_id = max(e4.id, nc3.id) + 100_000
+
+    empty_chains =
+      ReviewBatch.build_practice_chains_batch_for_subtree(
+        scope,
+        repertoire.id,
+        "white",
+        missing_position_id,
+        batch_size: 10
+      )
+
+    assert empty_chains == []
+  end
+
+  defp find_position_by_san!(positions, san) do
+    Enum.find(positions, &(&1.san == san)) || raise "position with SAN #{san} not found"
+  end
+
+  defp find_position_by_parent_fen_and_san!(positions, parent_fen, san) do
+    Enum.find(positions, &(&1.parent_fen == parent_fen and &1.san == san)) ||
+      raise "position with SAN #{san} and parent FEN #{parent_fen} not found"
+  end
 end

@@ -244,6 +244,26 @@ defmodule Bookmoves.Repertoire do
     )
   end
 
+  @spec list_subtree_position_ids(Scope.t(), pos_integer(), pos_integer()) :: [pos_integer()]
+  def list_subtree_position_ids(%Scope{} = scope, repertoire_id, review_root_position_id)
+      when is_integer(review_root_position_id) and review_root_position_id > 0 do
+    {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
+
+    position =
+      Repo.one(
+        from p in Position,
+          where:
+            p.id == ^review_root_position_id and p.user_id == ^user_id and
+              p.repertoire_id == ^repertoire_id,
+          limit: 1
+      )
+
+    case position do
+      nil -> []
+      %Position{} = found_position -> subtree_position_ids(found_position)
+    end
+  end
+
   @spec create_position(Scope.t(), pos_integer(), Position.attrs()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position(%Scope{} = scope, repertoire_id, attrs) do

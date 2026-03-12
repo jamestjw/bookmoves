@@ -18,6 +18,7 @@ defmodule Bookmoves.ReviewBatch do
     now = Keyword.get(opts, :now, DateTime.utc_now())
     batch_size = Keyword.get(opts, :batch_size, 20)
     chain_limit = Keyword.get(opts, :chain_limit, 3)
+    subtree_ids = Keyword.get(opts, :subtree_ids)
 
     # TODO: When subtree-scoped review is added, compute subtree IDs once per batch build
     # and reuse them across all query calls in this function. Consider a closure table for
@@ -30,9 +31,40 @@ defmodule Bookmoves.ReviewBatch do
       now,
       batch_size,
       chain_limit,
+      subtree_ids,
       MapSet.new(),
       [],
       0
+    )
+  end
+
+  @spec build_due_step_chains_batch_for_subtree(
+          Scope.t(),
+          pos_integer(),
+          Repertoire.color_side(),
+          pos_integer(),
+          keyword()
+        ) :: [step_chain()]
+  def build_due_step_chains_batch_for_subtree(
+        %Scope{} = scope,
+        repertoire_id,
+        side,
+        review_root_position_id,
+        opts \\ []
+      )
+      when side in ["white", "black"] and is_integer(review_root_position_id) and
+             review_root_position_id > 0 do
+    # TODO: Cache subtree IDs by review_root_position_id for subtree review starts.
+    # Potential options: a closure table for persistent fast lookups, or ETS for
+    # per-session/per-batch caching.
+    subtree_ids =
+      Repertoire.list_subtree_position_ids(scope, repertoire_id, review_root_position_id)
+
+    build_due_step_chains_batch(
+      scope,
+      repertoire_id,
+      side,
+      Keyword.put(opts, :subtree_ids, subtree_ids)
     )
   end
 
@@ -42,13 +74,42 @@ defmodule Bookmoves.ReviewBatch do
       when side in ["white", "black"] do
     batch_size = Keyword.get(opts, :batch_size, 20)
     exclude_ids = Keyword.get(opts, :exclude_ids, [])
+    subtree_ids = Keyword.get(opts, :subtree_ids)
 
     scope
     |> Repertoire.list_random_positions_for_side(repertoire_id, side,
       limit: batch_size,
-      exclude_ids: exclude_ids
+      exclude_ids: exclude_ids,
+      subtree_ids: subtree_ids
     )
     |> Enum.map(&[&1])
+  end
+
+  @spec build_practice_chains_batch_for_subtree(
+          Scope.t(),
+          pos_integer(),
+          Repertoire.color_side(),
+          pos_integer(),
+          keyword()
+        ) :: [chain()]
+  def build_practice_chains_batch_for_subtree(
+        %Scope{} = scope,
+        repertoire_id,
+        side,
+        review_root_position_id,
+        opts \\ []
+      )
+      when side in ["white", "black"] and is_integer(review_root_position_id) and
+             review_root_position_id > 0 do
+    subtree_ids =
+      Repertoire.list_subtree_position_ids(scope, repertoire_id, review_root_position_id)
+
+    build_practice_chains_batch(
+      scope,
+      repertoire_id,
+      side,
+      Keyword.put(opts, :subtree_ids, subtree_ids)
+    )
   end
 
   @spec build_due_step_chains_batch(
@@ -58,6 +119,7 @@ defmodule Bookmoves.ReviewBatch do
           DateTime.t(),
           non_neg_integer(),
           non_neg_integer(),
+          [pos_integer()] | nil,
           MapSet.t(pos_integer()),
           [step_chain()],
           non_neg_integer()
@@ -69,6 +131,7 @@ defmodule Bookmoves.ReviewBatch do
          _now,
          batch_size,
          _chain_limit,
+         _subtree_ids,
          _selected_ids,
          chains,
          total_count
@@ -84,6 +147,7 @@ defmodule Bookmoves.ReviewBatch do
          now,
          batch_size,
          chain_limit,
+         subtree_ids,
          selected_ids,
          chains,
          total_count
@@ -94,7 +158,8 @@ defmodule Bookmoves.ReviewBatch do
         repertoire_id,
         side,
         now,
-        MapSet.to_list(selected_ids)
+        MapSet.to_list(selected_ids),
+        subtree_ids: subtree_ids
       )
 
     case next_position do
@@ -116,6 +181,7 @@ defmodule Bookmoves.ReviewBatch do
                 total_count,
                 batch_size,
                 chain_limit,
+                subtree_ids,
                 parent
               )
 
@@ -126,6 +192,7 @@ defmodule Bookmoves.ReviewBatch do
               now,
               batch_size,
               chain_limit,
+              subtree_ids,
               selected_ids,
               chains ++ [chain],
               total_count
@@ -142,6 +209,7 @@ defmodule Bookmoves.ReviewBatch do
               now,
               batch_size,
               chain_limit,
+              subtree_ids,
               MapSet.put(selected_ids, position.id),
               chains,
               total_count
@@ -161,6 +229,7 @@ defmodule Bookmoves.ReviewBatch do
           non_neg_integer(),
           non_neg_integer(),
           non_neg_integer(),
+          [pos_integer()] | nil,
           Position.t()
         ) :: {[review_step()], MapSet.t(pos_integer()), non_neg_integer()}
   defp build_step_chain(
@@ -174,6 +243,7 @@ defmodule Bookmoves.ReviewBatch do
          total_count,
          batch_size,
          _remaining,
+         _subtree_ids,
          _board_position
        )
        when total_count >= batch_size do
@@ -191,6 +261,7 @@ defmodule Bookmoves.ReviewBatch do
          total_count,
          _batch_size,
          remaining,
+         _subtree_ids,
          _board_position
        )
        when remaining <= 0 do
@@ -208,6 +279,7 @@ defmodule Bookmoves.ReviewBatch do
          total_count,
          batch_size,
          remaining,
+         subtree_ids,
          %Position{} = board_position
        ) do
     selected_ids = MapSet.put(selected_ids, position.id)
@@ -224,7 +296,8 @@ defmodule Bookmoves.ReviewBatch do
           opponent_move.fen,
           side,
           now,
-          MapSet.to_list(selected_ids)
+          MapSet.to_list(selected_ids),
+          subtree_ids: subtree_ids
         )
       else
         nil
@@ -246,6 +319,7 @@ defmodule Bookmoves.ReviewBatch do
           total_count,
           batch_size,
           remaining - 1,
+          subtree_ids,
           opponent_move
         )
     end
