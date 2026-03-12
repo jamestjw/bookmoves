@@ -9,7 +9,7 @@ defmodule BookmovesWeb.RepertoireLive.Show do
     <Layouts.app
       flash={@flash}
       current_scope={@current_scope}
-      container_class="mx-auto w-full max-w-[1000px] space-y-4"
+      container_class="mx-auto w-full max-w-[1320px] space-y-4"
       main_class="px-4 py-6 sm:px-6 lg:px-8"
     >
       <.header>
@@ -26,7 +26,7 @@ defmodule BookmovesWeb.RepertoireLive.Show do
 
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)]">
         <div class="rounded-xl bg-base-200 p-4 flex justify-center">
-          <div style="width: min(100%, 720px); height: min(100%, 720px);">
+          <div style="width: min(100%, 820px); height: min(100%, 820px);">
             <.chessboard
               id="root-board"
               fen={@root_position.fen}

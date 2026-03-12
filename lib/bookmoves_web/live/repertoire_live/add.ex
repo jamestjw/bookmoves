@@ -12,7 +12,7 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       flash={@flash}
       current_scope={@current_scope}
       show_header={false}
-      container_class="mx-auto w-full max-w-[1000px] space-y-4"
+      container_class="mx-auto w-full max-w-[1320px] space-y-4"
     >
       <.header>
         View/Add Moves - {@repertoire.name}
@@ -25,13 +25,13 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       </.header>
 
       <div
-        class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+        class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)]"
         id="add-move-panel"
         phx-hook="RewindHotkeys"
       >
         <div>
           <div class="bg-base-200 rounded-xl p-4 flex justify-center">
-            <div style="width: min(100%, 720px); height: min(100%, 720px);">
+            <div style="width: min(100%, 820px); height: min(100%, 820px);">
               <.chessboard
                 id="add-move-board"
                 fen={@current_fen}
