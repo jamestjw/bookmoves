@@ -50,7 +50,19 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
         <div class="lg:col-span-1">
           <div class="bg-base-200 rounded-xl p-4">
-            <h3 class="font-semibold mb-4">Possible Moves</h3>
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h3 class="font-semibold">Possible Moves</h3>
+              <%= if is_nil(@editing_comment_id) do %>
+                <.button
+                  class="btn-ghost btn-sm"
+                  phx-click="rewind"
+                  disabled={is_nil(@parent_fen)}
+                  id="rewind-move-inline"
+                >
+                  <.icon name="hero-arrow-left" /> Prev
+                </.button>
+              <% end %>
+            </div>
 
             <div id="possible-moves" class="overflow-x-auto">
               <%= if @editing_comment_id do %>
@@ -210,17 +222,6 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                     disabled={is_nil(@current_position_id)}
                   >
                     Practice from here
-                  </.button>
-                </div>
-
-                <div class="flex justify-end">
-                  <.button
-                    class="btn-ghost btn-sm"
-                    phx-click="rewind"
-                    disabled={is_nil(@parent_fen)}
-                    id="rewind-move-inline"
-                  >
-                    <.icon name="hero-arrow-left" /> Prev
                   </.button>
                 </div>
               </div>
