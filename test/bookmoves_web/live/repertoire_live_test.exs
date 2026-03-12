@@ -49,6 +49,42 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "No positions due for review!"
     end
 
+    test "subtree review only serves due moves within selected subtree", %{
+      conn: conn,
+      scope: scope
+    } do
+      root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+
+      _e4 =
+        position_fixture(scope, %{
+          repertoire: repertoire,
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: past
+        })
+
+      d4 =
+        position_fixture(scope, %{
+          repertoire: repertoire,
+          fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+          san: "d4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: past
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review/#{d4.id}")
+
+      render_hook(view, "board-move", %{"san" => "d4", "move" => "d2d4"})
+
+      html = render(view)
+      assert html =~ "No positions due for review!"
+    end
+
     test "shows current move list under the board", %{conn: conn, scope: scope} do
       root = white_root_fixture()
       repertoire = repertoire_fixture(scope, %{color_side: "white"})
@@ -382,6 +418,46 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
       render_click(view, "continue")
       assert has_element?(view, "#review-board")
+    end
+  end
+
+  describe "add move subtree actions" do
+    test "root add view shows disabled subtree review/practice buttons", %{
+      conn: conn,
+      scope: scope
+    } do
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/add")
+
+      assert has_element?(view, "#review-subtree[disabled]")
+      assert has_element?(view, "#practice-subtree[disabled]")
+    end
+
+    test "position add view links subtree review/practice routes", %{conn: conn, scope: scope} do
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+
+      position =
+        position_fixture(scope, %{
+          repertoire: repertoire,
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: Repertoire.Position.starting_fen(),
+          color_side: "white"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/add")
+
+      view
+      |> element("#possible-move-#{position.id}")
+      |> render_click()
+
+      assert has_element?(view, "#review-subtree")
+      assert has_element?(view, "#practice-subtree")
+
+      html = render(view)
+      assert html =~ "/repertoire/#{repertoire.id}/review/#{position.id}"
+      assert html =~ "/repertoire/#{repertoire.id}/practice/#{position.id}"
     end
   end
 

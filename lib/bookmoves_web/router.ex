@@ -31,6 +31,15 @@ defmodule BookmovesWeb.Router do
       live "/repertoire/:repertoire_id", RepertoireLive.Show, :show
       live "/repertoire/:repertoire_id/review", RepertoireLive.Review, :review
       live "/repertoire/:repertoire_id/practice", RepertoireLive.Review, :practice
+
+      live "/repertoire/:repertoire_id/review/:review_root_position_id",
+           RepertoireLive.Review,
+           :review_subtree
+
+      live "/repertoire/:repertoire_id/practice/:review_root_position_id",
+           RepertoireLive.Review,
+           :practice_subtree
+
       live "/repertoire/:repertoire_id/add", RepertoireLive.Add, :add
       live "/repertoire/:repertoire_id/add/:position_id", RepertoireLive.Add, :add_from_position
       live "/repertoire/:repertoire_id/import-pgn", RepertoireLive.ImportPgn, :import_pgn

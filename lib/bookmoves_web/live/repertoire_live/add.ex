@@ -129,15 +129,46 @@ defmodule BookmovesWeb.RepertoireLive.Add do
               <% end %>
             </div>
             <%= if is_nil(@editing_comment_id) do %>
-              <div class="mt-4 flex justify-end">
-                <.button
-                  class="btn-ghost btn-sm"
-                  phx-click="rewind"
-                  disabled={is_nil(@parent_fen)}
-                  id="rewind-move-inline"
-                >
-                  <.icon name="hero-arrow-left" /> Prev
-                </.button>
+              <div class="mt-4 space-y-3">
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <.button
+                    id="review-subtree"
+                    navigate={
+                      if(@current_position_id,
+                        do: ~p"/repertoire/#{@repertoire.id}/review/#{@current_position_id}",
+                        else: nil
+                      )
+                    }
+                    class="btn btn-soft w-full"
+                    disabled={is_nil(@current_position_id)}
+                  >
+                    Review from here
+                  </.button>
+                  <.button
+                    id="practice-subtree"
+                    navigate={
+                      if(@current_position_id,
+                        do: ~p"/repertoire/#{@repertoire.id}/practice/#{@current_position_id}",
+                        else: nil
+                      )
+                    }
+                    class="btn btn-soft w-full"
+                    disabled={is_nil(@current_position_id)}
+                  >
+                    Practice from here
+                  </.button>
+                </div>
+
+                <div class="flex justify-end">
+                  <.button
+                    class="btn-ghost btn-sm"
+                    phx-click="rewind"
+                    disabled={is_nil(@parent_fen)}
+                    id="rewind-move-inline"
+                  >
+                    <.icon name="hero-arrow-left" /> Prev
+                  </.button>
+                </div>
               </div>
             <% end %>
           </div>

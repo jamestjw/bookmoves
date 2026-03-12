@@ -178,7 +178,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                   <% else %>
                     <%= if @review_mode == :due and @practice_available? do %>
                       <.button
-                        navigate={~p"/repertoire/#{@repertoire.id}/practice"}
+                        navigate={practice_start_path(@repertoire.id, @review_root_position_id)}
                         class="btn btn-primary w-full"
                       >
                         Practice now
@@ -209,9 +209,27 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   end
 
   @impl true
-  def mount(%{"repertoire_id" => repertoire_id}, _session, socket) do
+  def mount(%{"repertoire_id" => repertoire_id} = params, _session, socket) do
     repertoire = Repertoire.get_repertoire!(socket.assigns.current_scope, repertoire_id)
-    socket = assign(socket, repertoire: repertoire)
+    review_root_position_id = parse_review_root_position_id(params)
+
+    review_subtree_ids =
+      if is_integer(review_root_position_id) do
+        Repertoire.list_subtree_position_ids(
+          socket.assigns.current_scope,
+          repertoire.id,
+          review_root_position_id
+        )
+      else
+        nil
+      end
+
+    socket =
+      assign(socket,
+        repertoire: repertoire,
+        review_root_position_id: review_root_position_id,
+        review_subtree_ids: review_subtree_ids
+      )
 
     {:ok, start_review(socket, repertoire.color_side, review_mode(socket))}
   end
@@ -347,6 +365,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   @spec start_review(Phoenix.LiveView.Socket.t(), String.t(), review_mode()) ::
           Phoenix.LiveView.Socket.t()
   defp start_review(socket, side, review_mode) do
+    %{review_subtree_ids: subtree_ids} = socket.assigns
+
     {due_chains, practice_seen_ids} =
       case review_mode do
         :practice ->
@@ -359,7 +379,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               socket.assigns.repertoire.id,
               side,
               batch_size: batch_size(),
-              exclude_ids: exclude_ids
+              exclude_ids: exclude_ids,
+              subtree_ids: subtree_ids
             )
 
           {practice_chains, practice_seen_ids} =
@@ -368,7 +389,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                  socket.assigns.current_scope,
                  socket.assigns.repertoire.id,
                  side,
-                 batch_size: batch_size()
+                 batch_size: batch_size(),
+                 subtree_ids: subtree_ids
                ), MapSet.new()}
             else
               {practice_chains, practice_seen_ids}
@@ -388,7 +410,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
              socket.assigns.repertoire.id,
              side,
              batch_size: batch_size(),
-             chain_limit: chain_limit()
+             chain_limit: chain_limit(),
+             subtree_ids: subtree_ids
            ), MapSet.new()}
       end
 
@@ -407,7 +430,8 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               practice_available?(
                 socket.assigns.current_scope,
                 socket.assigns.repertoire.id,
-                side
+                side,
+                subtree_ids
               ),
             practice_seen_ids: practice_seen_ids
           )
@@ -439,7 +463,12 @@ defmodule BookmovesWeb.RepertoireLive.Review do
           show_position_comment: false,
           empty_state_message: empty_state_message(review_mode),
           practice_available?:
-            practice_available?(socket.assigns.current_scope, socket.assigns.repertoire.id, side),
+            practice_available?(
+              socket.assigns.current_scope,
+              socket.assigns.repertoire.id,
+              side,
+              subtree_ids
+            ),
           practice_seen_ids: practice_seen_ids
         )
     end
@@ -602,11 +631,15 @@ defmodule BookmovesWeb.RepertoireLive.Review do
         )
 
       :due ->
+        %{review_subtree_ids: subtree_ids} = socket.assigns
+
         remaining_due_count =
           Repertoire.count_due_positions_for_side(
             socket.assigns.current_scope,
             socket.assigns.repertoire.id,
-            side
+            side,
+            DateTime.utc_now(),
+            subtree_ids: subtree_ids
           )
 
         socket =
@@ -717,6 +750,7 @@ defmodule BookmovesWeb.RepertoireLive.Review do
     # live_action is the route action for this LiveView (set by the router).
     # We use it to distinguish /review vs /practice routes that share this module.
     case socket.assigns.live_action do
+      :practice_subtree -> :practice
       :practice -> :practice
       _ -> :due
     end
@@ -741,10 +775,37 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   defp comment_present?(comment) when is_binary(comment), do: String.trim(comment) != ""
   defp comment_present?(_comment), do: false
 
-  @spec practice_available?(Bookmoves.Accounts.Scope.t(), pos_integer(), String.t()) :: boolean()
-  defp practice_available?(scope, repertoire_id, side) do
-    Repertoire.count_practice_positions_for_side(scope, repertoire_id, side) > 0
+  @spec practice_available?(
+          Bookmoves.Accounts.Scope.t(),
+          pos_integer(),
+          String.t(),
+          [pos_integer()] | nil
+        ) ::
+          boolean()
+  defp practice_available?(scope, repertoire_id, side, subtree_ids) do
+    Repertoire.count_practice_positions_for_side(scope, repertoire_id, side,
+      subtree_ids: subtree_ids
+    ) > 0
   end
+
+  @spec practice_start_path(pos_integer(), pos_integer() | nil) :: String.t()
+  defp practice_start_path(repertoire_id, nil), do: ~p"/repertoire/#{repertoire_id}/practice"
+
+  defp practice_start_path(repertoire_id, review_root_position_id)
+       when is_integer(review_root_position_id) do
+    ~p"/repertoire/#{repertoire_id}/practice/#{review_root_position_id}"
+  end
+
+  @spec parse_review_root_position_id(map()) :: pos_integer() | nil
+  defp parse_review_root_position_id(%{"review_root_position_id" => value})
+       when is_binary(value) do
+    case Integer.parse(value) do
+      {position_id, ""} when position_id > 0 -> position_id
+      _ -> nil
+    end
+  end
+
+  defp parse_review_root_position_id(_params), do: nil
 
   @spec parent_position(Bookmoves.Accounts.Scope.t(), pos_integer(), String.t(), String.t()) ::
           Position.t() | nil
