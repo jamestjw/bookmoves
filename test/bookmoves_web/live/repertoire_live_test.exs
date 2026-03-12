@@ -279,6 +279,41 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert html =~ "Incorrect move. Try again."
     end
 
+    test "disabled moves still show valid but not due message", %{conn: conn, scope: scope} do
+      root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+
+      e4 =
+        position_fixture(scope, %{
+          repertoire: repertoire,
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: past
+        })
+
+      _d4 =
+        position_fixture(scope, %{
+          repertoire: repertoire,
+          fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+          san: "d4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: past
+        })
+
+      assert :ok = Repertoire.set_branch_training_enabled(scope, repertoire.id, e4.id, false)
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
+
+      render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
+
+      html = render(view)
+      assert html =~ "That is a valid move, but not one that is due right now."
+    end
+
     test "skip moves on and scores as incorrect", %{conn: conn, scope: scope} do
       root = white_root_fixture()
       repertoire = repertoire_fixture(scope, %{color_side: "white"})
@@ -493,6 +528,36 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       html = render(view)
       assert html =~ "/repertoire/#{repertoire.id}/review/#{position.id}"
       assert html =~ "/repertoire/#{repertoire.id}/practice/#{position.id}"
+    end
+
+    test "can toggle branch training state from add view", %{conn: conn, scope: scope} do
+      root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+
+      position =
+        position_fixture(scope, %{
+          repertoire: repertoire,
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/add")
+
+      refute has_element?(view, "#possible-move-#{position.id} span.text-base-content\\/40")
+
+      view
+      |> element("#toggle-training-#{position.id}")
+      |> render_click()
+
+      assert has_element?(view, "#possible-move-#{position.id} span.text-base-content\\/40")
+
+      view
+      |> element("#toggle-training-#{position.id}")
+      |> render_click()
+
+      refute has_element?(view, "#possible-move-#{position.id} span.text-base-content\\/40")
     end
   end
 

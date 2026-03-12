@@ -13,6 +13,7 @@ defmodule Bookmoves.Repertoire.Position do
           san: String.t() | nil,
           parent_fen: String.t() | nil,
           comment: String.t() | nil,
+          training_enabled: boolean() | nil,
           move_color: String.t() | nil,
           next_review_at: DateTime.t() | nil,
           last_reviewed_at: DateTime.t() | nil,
@@ -28,6 +29,7 @@ defmodule Bookmoves.Repertoire.Position do
           optional(:san) => String.t() | nil,
           optional(:parent_fen) => String.t() | nil,
           optional(:comment) => String.t() | nil,
+          optional(:training_enabled) => boolean() | nil,
           optional(:move_color) => String.t() | nil,
           optional(:next_review_at) => DateTime.t() | nil,
           optional(:last_reviewed_at) => DateTime.t() | nil,
@@ -44,6 +46,7 @@ defmodule Bookmoves.Repertoire.Position do
           san: String.t() | nil,
           parent_fen: String.t() | nil,
           comment: String.t() | nil,
+          training_enabled: boolean() | nil,
           move_color: String.t() | nil,
           next_review_at: DateTime.t() | nil,
           last_reviewed_at: DateTime.t() | nil,
@@ -67,6 +70,7 @@ defmodule Bookmoves.Repertoire.Position do
     field :san, :string
     field :parent_fen, :string
     field :comment, :string
+    field :training_enabled, :boolean
     field :move_color, :string
     field :next_review_at, :utc_datetime
     field :last_reviewed_at, :utc_datetime
@@ -86,6 +90,7 @@ defmodule Bookmoves.Repertoire.Position do
       :san,
       :parent_fen,
       :comment,
+      :training_enabled,
       :move_color,
       :next_review_at,
       :last_reviewed_at,
@@ -112,6 +117,7 @@ defmodule Bookmoves.Repertoire.Position do
 
     changeset
     |> put_change_if_missing(:next_review_at, now)
+    |> put_change_if_missing(:training_enabled, true)
     |> put_change_if_missing(:interval_days, 1)
     |> put_change_if_missing(:ease_factor, default_ease_factor())
     |> put_change_if_missing(:repetitions, 0)

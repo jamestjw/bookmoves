@@ -13,6 +13,7 @@ defmodule Bookmoves.Repertoire do
   alias ChessLogic.Position, as: ChessPosition
 
   @existing_key_query_chunk_size 200
+  @subtree_update_chunk_size 500
 
   @type color_side :: String.t()
   @type stats :: %{total: non_neg_integer(), due: non_neg_integer()}
@@ -95,7 +96,8 @@ defmodule Bookmoves.Repertoire do
     Repo.all(
       from p in Position,
         where:
-          p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and p.next_review_at <= ^now,
+          p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and
+            p.training_enabled == true and p.next_review_at <= ^now,
         order_by: [asc: p.next_review_at, asc: p.id]
     )
   end
@@ -177,7 +179,7 @@ defmodule Bookmoves.Repertoire do
       where:
         p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and
           p.parent_fen == ^parent_fen and
-          p.move_color == ^color_side and p.next_review_at <= ^now
+          p.training_enabled == true and p.move_color == ^color_side and p.next_review_at <= ^now
     )
     |> maybe_filter_subtree_ids(subtree_ids)
     |> maybe_exclude_ids(exclude_ids)
@@ -268,6 +270,7 @@ defmodule Bookmoves.Repertoire do
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position(%Scope{} = scope, repertoire_id, attrs) do
     {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
+    attrs = maybe_inherit_parent_training_enabled(scope, repertoire_id, attrs)
 
     with :ok <- validate_move_transition(attrs) do
       %Position{}
@@ -389,6 +392,7 @@ defmodule Bookmoves.Repertoire do
       :san,
       :parent_fen,
       :comment,
+      :training_enabled,
       :move_color,
       :next_review_at,
       :last_reviewed_at,
@@ -408,6 +412,7 @@ defmodule Bookmoves.Repertoire do
       san,
       parent_fen,
       comment,
+      training_enabled,
       move_color,
       next_review_at,
       last_reviewed_at,
@@ -426,6 +431,7 @@ defmodule Bookmoves.Repertoire do
         san,
         parent_fen,
         comment,
+        training_enabled,
         move_color,
         next_review_at,
         last_reviewed_at,
@@ -448,6 +454,7 @@ defmodule Bookmoves.Repertoire do
         p.san,
         p.parent_fen,
         p.comment,
+        p.training_enabled,
         p.move_color,
         p.next_review_at,
         p.last_reviewed_at,
@@ -469,6 +476,7 @@ defmodule Bookmoves.Repertoire do
       san,
       parent_fen,
       comment,
+      training_enabled,
       move_color,
       next_review_at,
       last_reviewed_at,
@@ -550,6 +558,39 @@ defmodule Bookmoves.Repertoire do
     if count == 1, do: :ok, else: :error
   end
 
+  @spec set_branch_training_enabled(Scope.t(), pos_integer(), pos_integer(), boolean()) ::
+          :ok | :error
+  def set_branch_training_enabled(
+        %Scope{} = scope,
+        repertoire_id,
+        review_root_position_id,
+        enabled
+      )
+      when is_integer(review_root_position_id) and review_root_position_id > 0 and
+             is_boolean(enabled) do
+    subtree_ids = list_subtree_position_ids(scope, repertoire_id, review_root_position_id)
+
+    case subtree_ids do
+      [] ->
+        :error
+
+      _ ->
+        case Repo.transact(fn ->
+               subtree_ids
+               |> Enum.chunk_every(@subtree_update_chunk_size)
+               |> Enum.each(fn ids_chunk ->
+                 from(p in Position, where: p.id in ^ids_chunk)
+                 |> Repo.update_all(set: [training_enabled: enabled])
+               end)
+
+               {:ok, :done}
+             end) do
+          {:ok, :done} -> :ok
+          {:error, _reason} -> :error
+        end
+    end
+  end
+
   @spec delete_position(Position.persisted_t()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def delete_position(%Position{} = position) do
@@ -629,7 +670,9 @@ defmodule Bookmoves.Repertoire do
     total =
       Repo.one(
         from p in Position,
-          where: p.user_id == ^user_id and p.repertoire_id == ^repertoire_id,
+          where:
+            p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and
+              p.training_enabled == true,
           select: count()
       ) || 0
 
@@ -698,6 +741,7 @@ defmodule Bookmoves.Repertoire do
     from(p in Position,
       where:
         p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and
+          p.training_enabled == true and
           p.move_color == ^color_side and
           p.next_review_at <= ^now
     )
@@ -713,6 +757,7 @@ defmodule Bookmoves.Repertoire do
     from(p in Position,
       where:
         p.user_id == ^user_id and p.repertoire_id == ^repertoire_id and
+          p.training_enabled == true and
           p.move_color == ^color_side and
           not is_nil(p.parent_fen)
     )
@@ -739,6 +784,35 @@ defmodule Bookmoves.Repertoire do
 
   defp maybe_filter_subtree_ids(query, subtree_ids) when is_list(subtree_ids) do
     from(p in query, where: p.id in ^subtree_ids)
+  end
+
+  @spec maybe_inherit_parent_training_enabled(Scope.t(), pos_integer(), map()) :: map()
+  defp maybe_inherit_parent_training_enabled(%Scope{} = scope, repertoire_id, attrs)
+       when is_map(attrs) do
+    case Map.get(attrs, :parent_fen) do
+      parent_fen when is_binary(parent_fen) ->
+        Map.put(
+          attrs,
+          :training_enabled,
+          parent_training_enabled?(scope, repertoire_id, parent_fen)
+        )
+
+      _ ->
+        attrs
+    end
+  end
+
+  @spec parent_training_enabled?(Scope.t(), pos_integer(), String.t()) :: boolean()
+  defp parent_training_enabled?(%Scope{} = scope, repertoire_id, parent_fen)
+       when is_binary(parent_fen) do
+    if parent_fen == Position.starting_fen() do
+      true
+    else
+      case get_position_by_fen(scope, repertoire_id, parent_fen) do
+        nil -> true
+        %Position{} = parent -> parent.training_enabled != false
+      end
+    end
   end
 
   @spec import_positions(Scope.t(), pos_integer(), [Position.attrs()]) ::

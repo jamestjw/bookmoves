@@ -91,17 +91,42 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                       >
                         <div class="flex items-start justify-between gap-3">
                           <div class="flex-1">
-                            <span class="text-base font-semibold tracking-tight">
+                            <span class={[
+                              "text-base font-semibold tracking-tight",
+                              child.training_enabled == false && "text-base-content/40"
+                            ]}>
                               {next_move_label(child, @current_move_index)}
                             </span>
                             <%= if child.comment do %>
                               <div class="mt-1">
-                                <p class="text-xs opacity-70">{child.comment}</p>
+                                <p
+                                  phx-no-format
+                                  class="text-xs opacity-70 whitespace-pre-wrap break-all [overflow-wrap:anywhere]"
+                                >{child.comment}</p>
                               </div>
                             <% end %>
                           </div>
                         </div>
                         <div class="mt-3 flex items-center gap-4">
+                          <.button
+                            id={"toggle-training-#{child.id}"}
+                            class="btn-ghost btn-xs text-[0.7rem] text-base-content/70 bg-base-100 hover:bg-base-200 hover:brightness-150"
+                            phx-click="toggle-training"
+                            phx-value-id={child.id}
+                            phx-stop-propagation
+                          >
+                            <.icon
+                              name={
+                                if child.training_enabled == false,
+                                  do: "hero-play",
+                                  else: "hero-pause"
+                              }
+                              class="w-3.5 h-3.5"
+                            />
+                            {if child.training_enabled == false,
+                              do: "Enable branch",
+                              else: "Disable branch"}
+                          </.button>
                           <.button
                             class="btn-ghost btn-xs text-[0.7rem] text-base-content/70 bg-base-100 hover:bg-base-200 hover:brightness-150"
                             phx-click="edit-comment"
@@ -327,6 +352,36 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
       :error ->
         {:noreply, put_flash(socket, :error, "Unable to save comment")}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle-training", %{"id" => id}, socket) do
+    repertoire_id = repertoire_id!(socket)
+    position_id = String.to_integer(id)
+
+    with %Repertoire.Position{} = position <-
+           Repertoire.get_position!(socket.assigns.current_scope, repertoire_id, position_id),
+         :ok <-
+           Repertoire.set_branch_training_enabled(
+             socket.assigns.current_scope,
+             repertoire_id,
+             position.id,
+             position.training_enabled == false
+           ) do
+      {:noreply,
+       socket
+       |> put_flash(
+         :info,
+         if(position.training_enabled == false,
+           do: "Branch enabled for training",
+           else: "Branch disabled for training"
+         )
+       )
+       |> load_add_form(repertoire_id, socket.assigns.current_position_id)}
+    else
+      _ ->
+        {:noreply, put_flash(socket, :error, "Unable to update branch training state")}
     end
   end
 
