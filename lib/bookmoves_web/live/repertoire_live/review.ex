@@ -114,9 +114,23 @@ defmodule BookmovesWeb.RepertoireLive.Review do
               <% end %>
 
               <div class="mt-4">
-                <.button phx-click="skip" class="btn btn-primary w-full hover:brightness-110">
-                  Skip
-                </.button>
+                <div class="grid grid-cols-2 gap-2">
+                  <.button
+                    id="hint"
+                    phx-click="hint"
+                    class="btn btn-soft w-full hover:brightness-110"
+                    disabled={is_list(@hint_sans) and @hint_sans != []}
+                  >
+                    Hint
+                  </.button>
+                  <.button
+                    id="skip"
+                    phx-click="skip"
+                    class="btn btn-primary w-full hover:brightness-110"
+                  >
+                    Skip
+                  </.button>
+                </div>
               </div>
             </div>
           </div>
@@ -343,6 +357,60 @@ defmodule BookmovesWeb.RepertoireLive.Review do
   @impl true
   def handle_event("toggle-position-comment", _params, socket) do
     {:noreply, update(socket, :show_position_comment, fn show? -> not show? end)}
+  end
+
+  @impl true
+  def handle_event("hint", _params, socket) do
+    case socket.assigns do
+      %{current_position: %Position{} = current_position, due_targets: due_targets}
+      when due_targets != [] ->
+        found_targets = socket.assigns.found_targets || []
+        hint_sans = socket.assigns.hint_sans || []
+
+        case next_hint_san(due_targets, found_targets, hint_sans) do
+          nil ->
+            attempted_incorrect =
+              if socket.assigns.review_mode == :due do
+                true
+              else
+                socket.assigns.attempted_incorrect
+              end
+
+            {:noreply,
+             socket
+             |> assign(attempted_incorrect: attempted_incorrect)
+             |> push_event("board-reset", %{
+               fen: current_position.fen,
+               hintSans: hint_sans,
+               animate: false
+             })}
+
+          san ->
+            new_hint_sans = hint_sans ++ [san]
+
+            attempted_incorrect =
+              if socket.assigns.review_mode == :due do
+                true
+              else
+                socket.assigns.attempted_incorrect
+              end
+
+            {:noreply,
+             socket
+             |> assign(
+               hint_sans: new_hint_sans,
+               attempted_incorrect: attempted_incorrect
+             )
+             |> push_event("board-reset", %{
+               fen: current_position.fen,
+               hintSans: new_hint_sans,
+               animate: false
+             })}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   @impl true
@@ -829,5 +897,20 @@ defmodule BookmovesWeb.RepertoireLive.Review do
       end)
 
     {Enum.reverse(remaining), removed}
+  end
+
+  @spec next_hint_san(nonempty_due_targets(), [String.t()], [String.t()]) :: String.t() | nil
+  defp next_hint_san(due_targets, found_targets, hint_sans) do
+    found_set = MapSet.new(found_targets)
+    hint_set = hint_sans |> Enum.map(&String.upcase/1) |> MapSet.new()
+
+    due_targets
+    |> Enum.map(& &1.san)
+    |> Enum.find(fn san ->
+      sanitized = String.upcase(san || "")
+
+      sanitized != "" and not MapSet.member?(found_set, sanitized) and
+        not MapSet.member?(hint_set, sanitized)
+    end)
   end
 end

@@ -38,6 +38,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
           san: "e4",
           parent_fen: root.fen,
           color_side: "white",
+          last_reviewed_at: DateTime.add(past, -3600, :second),
           next_review_at: past
         })
 
@@ -307,6 +308,40 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert DateTime.compare(skipped.last_reviewed_at, now) in [:eq, :gt]
       assert DateTime.compare(skipped.next_review_at, now) == :gt
       assert skipped.ease_factor < Repertoire.Position.default_ease_factor()
+
+      html = render(view)
+      assert html =~ "No positions due for review!"
+    end
+
+    test "hint marks review position incorrect even after a correct move", %{
+      conn: conn,
+      scope: scope
+    } do
+      root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+
+      due_child =
+        position_fixture(scope, %{
+          repertoire: repertoire,
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          next_review_at: past
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/review")
+
+      render_click(view, "hint")
+      assert has_element?(view, "#hint[disabled]")
+      render_hook(view, "board-move", %{"san" => "e4", "move" => "e2e4"})
+
+      hinted = Repertoire.get_position_by_fen(scope, repertoire.id, due_child.fen)
+      assert hinted.repetitions == 0
+      assert hinted.interval_days == 1
+      assert hinted.ease_factor < Repertoire.Position.default_ease_factor()
 
       html = render(view)
       assert html =~ "No positions due for review!"
