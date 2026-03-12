@@ -3,6 +3,8 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   alias Bookmoves.Repertoire
 
+  @comment_preview_limit 140
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -100,14 +102,41 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                             <%= if child.comment do %>
                               <div class="mt-1">
                                 <p
+                                  id={"comment-text-#{child.id}"}
                                   phx-no-format
                                   class="text-xs opacity-70 whitespace-pre-wrap break-all [overflow-wrap:anywhere]"
-                                >{child.comment}</p>
+                                >{if(comment_expanded?(@expanded_comment_ids, child.id),
+                                    do: child.comment,
+                                    else: comment_preview(child.comment)
+                                  )}</p>
+
+                                <%= if comment_truncated?(child.comment) do %>
+                                  <.button
+                                    id={"toggle-comment-#{child.id}"}
+                                    class="btn-ghost btn-xs mt-1 text-[0.7rem] text-base-content/70 bg-base-100 hover:bg-base-200 hover:brightness-150"
+                                    phx-click="toggle-comment-expand"
+                                    phx-value-id={child.id}
+                                    phx-stop-propagation
+                                  >
+                                    <.icon
+                                      name={
+                                        if comment_expanded?(@expanded_comment_ids, child.id),
+                                          do: "hero-chevron-up",
+                                          else: "hero-chevron-down"
+                                      }
+                                      class="w-3.5 h-3.5"
+                                    />
+                                    {if(comment_expanded?(@expanded_comment_ids, child.id),
+                                      do: "Show less",
+                                      else: "Show more"
+                                    )}
+                                  </.button>
+                                <% end %>
                               </div>
                             <% end %>
                           </div>
                         </div>
-                        <div class="mt-3 flex items-center gap-4">
+                        <div class="mt-2 flex items-center gap-4">
                           <.button
                             id={"toggle-training-#{child.id}"}
                             class="btn-ghost btn-xs text-[0.7rem] text-base-content/70 bg-base-100 hover:bg-base-200 hover:brightness-150"
@@ -205,11 +234,13 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   @impl true
   def mount(%{"repertoire_id" => repertoire_id}, _session, socket) do
+    socket = assign(socket, expanded_comment_ids: MapSet.new())
     {:ok, load_add_form(socket, repertoire_id, nil)}
   end
 
   @impl true
   def mount(%{"repertoire_id" => repertoire_id, "position_id" => position_id}, _session, socket) do
+    socket = assign(socket, expanded_comment_ids: MapSet.new())
     {:ok, load_add_form(socket, repertoire_id, position_id)}
   end
 
@@ -353,6 +384,20 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       :error ->
         {:noreply, put_flash(socket, :error, "Unable to save comment")}
     end
+  end
+
+  @impl true
+  def handle_event("toggle-comment-expand", %{"id" => id}, socket) do
+    position_id = String.to_integer(id)
+
+    expanded_comment_ids =
+      if MapSet.member?(socket.assigns.expanded_comment_ids, position_id) do
+        MapSet.delete(socket.assigns.expanded_comment_ids, position_id)
+      else
+        MapSet.put(socket.assigns.expanded_comment_ids, position_id)
+      end
+
+    {:noreply, assign(socket, expanded_comment_ids: expanded_comment_ids)}
   end
 
   @impl true
@@ -569,5 +614,28 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
   defp repertoire_id!(_socket) do
     raise ArgumentError, "expected socket assigns to include repertoire id"
+  end
+
+  @spec comment_truncated?(String.t() | nil) :: boolean()
+  defp comment_truncated?(comment) when is_binary(comment),
+    do: String.length(comment) > @comment_preview_limit
+
+  defp comment_truncated?(_comment), do: false
+
+  @spec comment_preview(String.t() | nil) :: String.t() | nil
+  defp comment_preview(comment) when is_binary(comment) do
+    if comment_truncated?(comment) do
+      String.slice(comment, 0, @comment_preview_limit) <> "..."
+    else
+      comment
+    end
+  end
+
+  defp comment_preview(comment), do: comment
+
+  @spec comment_expanded?(MapSet.t(pos_integer()), pos_integer()) :: boolean()
+  defp comment_expanded?(%MapSet{} = expanded_comment_ids, position_id)
+       when is_integer(position_id) do
+    MapSet.member?(expanded_comment_ids, position_id)
   end
 end

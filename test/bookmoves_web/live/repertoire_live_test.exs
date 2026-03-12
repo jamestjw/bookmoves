@@ -559,6 +559,46 @@ defmodule BookmovesWeb.RepertoireLiveTest do
 
       refute has_element?(view, "#possible-move-#{position.id} span.text-base-content\\/40")
     end
+
+    test "long move comments can be expanded and collapsed", %{conn: conn, scope: scope} do
+      root = white_root_fixture()
+      repertoire = repertoire_fixture(scope, %{color_side: "white"})
+      long_comment = String.duplicate("a", 150) <> "__TAIL_MARKER__"
+
+      position =
+        position_fixture(scope, %{
+          repertoire: repertoire,
+          fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          san: "e4",
+          parent_fen: root.fen,
+          color_side: "white",
+          comment: long_comment
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/repertoire/#{repertoire.id}/add")
+
+      assert has_element?(view, "#toggle-comment-#{position.id}")
+
+      initial_html = render(view)
+      refute initial_html =~ "__TAIL_MARKER__"
+      assert initial_html =~ "Show more"
+
+      view
+      |> element("#toggle-comment-#{position.id}")
+      |> render_click()
+
+      expanded_html = render(view)
+      assert expanded_html =~ "__TAIL_MARKER__"
+      assert expanded_html =~ "Show less"
+
+      view
+      |> element("#toggle-comment-#{position.id}")
+      |> render_click()
+
+      collapsed_html = render(view)
+      refute collapsed_html =~ "__TAIL_MARKER__"
+      assert collapsed_html =~ "Show more"
+    end
   end
 
   describe "import pgn" do
