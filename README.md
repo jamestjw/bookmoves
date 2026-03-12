@@ -10,6 +10,8 @@ Bookmoves is a Phoenix LiveView app for spaced repetition training of chess open
 - **Spaced Repetition**: Automatic scheduling using simplified SM-2 algorithm
 - **Batch Review**: Review due moves in batches with short linear chains
 - **Practice Mode**: Review random moves without affecting spaced repetition
+- **Subtree Training**: Start Review or Practice from a selected position in your move tree
+- **Hint Arrows**: Show an on-board hint arrow during review/practice (hints count as incorrect in review)
 - **PGN Import**: Import full PGN lines (including nested variations) server-side
 - **Branch-Aware Trees**: Store move identity as parent FEN + SAN + FEN to preserve transpositions
 - **User Accounts**: Register and log in to access your own repertoires
@@ -18,7 +20,6 @@ Bookmoves is a Phoenix LiveView app for spaced repetition training of chess open
 
 - Add preset opening repertoires that users can import
 - Allow disabling training for a specific branch in a repertoire
-- Practice mode for a specific subtree in a repertoire
 
 ## Getting Started
 
@@ -34,6 +35,7 @@ Bookmoves is a Phoenix LiveView app for spaced repetition training of chess open
 4. Optionally use "Import PGN" to import lines from a PGN file
 5. Drag pieces on the board to add moves and navigate by clicking saved moves
 6. Start "Review" for due moves or "Practice" for random moves in that repertoire
+7. In "View/Add Moves", pick a position and use "Review from here" / "Practice from here" for subtree training
 
 ## Architecture
 
