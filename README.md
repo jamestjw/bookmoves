@@ -19,7 +19,10 @@ Bookmoves is a Phoenix LiveView app for spaced repetition training of chess open
 
 ## Future features
 
-- Add preset opening repertoires that users can import
+- Add curated opening packs that users can import by side, style, and rating range
+- Import game PGNs and identify where games leave the repertoire, then generate drills from those positions
+- Add a branch-level weakness map (accuracy, lapses, overdue status) with a smart review queue
+- Add optional engine evaluation and move popularity annotations for key positions
 
 ## Getting Started
 
