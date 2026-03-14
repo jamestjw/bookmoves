@@ -48,7 +48,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                   orientation={@side}
                   draggable={true}
                   animation_duration={review_animation_duration_ms()}
-                  class="w-full h-full"
                 />
               </div>
             </div>
@@ -146,7 +145,6 @@ defmodule BookmovesWeb.RepertoireLive.Review do
                   orientation={@side}
                   draggable={false}
                   animation_duration={review_animation_duration_ms()}
-                  class="w-full h-full"
                 />
               </div>
             </div>

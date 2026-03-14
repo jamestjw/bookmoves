@@ -15,7 +15,7 @@ defmodule BookmovesWeb.ChessComponents do
     ~H"""
     <div
       id={@id}
-      class={["chessboard-container", "w-full", "h-full", @class]}
+      class={["chessboard-container", @class]}
       data-fen={@fen}
       data-orientation={@orientation}
       data-draggable={@draggable}

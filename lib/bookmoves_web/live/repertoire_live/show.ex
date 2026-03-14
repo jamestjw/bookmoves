@@ -31,7 +31,6 @@ defmodule BookmovesWeb.RepertoireLive.Show do
               id="root-board"
               fen={@root_position.fen}
               orientation={@side}
-              class="w-full h-full"
             />
           </div>
         </div>

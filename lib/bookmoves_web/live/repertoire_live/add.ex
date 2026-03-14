@@ -37,7 +37,6 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                 fen={@current_fen}
                 orientation={@side}
                 draggable={true}
-                class="w-full h-full"
               />
             </div>
           </div>
