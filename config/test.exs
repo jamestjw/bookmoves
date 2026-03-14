@@ -13,6 +13,15 @@ config :bookmoves, Bookmoves.Repo,
   pool_size: 5,
   pool: Ecto.Adapters.SQL.Sandbox
 
+config :bookmoves, Bookmoves.GamesRepo,
+  hostname: "127.0.0.1",
+  port: 5432,
+  username: "postgres",
+  password: "blopblopblop",
+  database: "bookmoves_games_test",
+  pool_size: 5,
+  pool: Ecto.Adapters.SQL.Sandbox
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :bookmoves, BookmovesWeb.Endpoint,

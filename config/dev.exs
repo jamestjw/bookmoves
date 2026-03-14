@@ -8,6 +8,16 @@ config :bookmoves, Bookmoves.Repo,
   show_sensitive_data_on_connection_error: true,
   log: :debug
 
+config :bookmoves, Bookmoves.GamesRepo,
+  hostname: "127.0.0.1",
+  port: 5432,
+  username: "postgres",
+  password: "blopblopblop",
+  database: "bookmoves_games_dev",
+  pool_size: 10,
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

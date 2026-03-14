@@ -26,5 +26,13 @@ config :swoosh, local: false
 # Do not print debug messages in production
 config :logger, level: :info
 
+config :bookmoves, Bookmoves.GamesRepo,
+  hostname: "127.0.0.1",
+  port: 5432,
+  username: "postgres",
+  password: "blopblopblop",
+  database: "bookmoves_games_prod",
+  pool_size: 10
+
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.

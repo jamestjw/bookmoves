@@ -10,6 +10,7 @@ defmodule Bookmoves.Application do
     children = [
       BookmovesWeb.Telemetry,
       Bookmoves.Repo,
+      Bookmoves.GamesRepo,
       {Ecto.Migrator,
        repos: Application.fetch_env!(:bookmoves, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:bookmoves, :dns_cluster_query) || :ignore},

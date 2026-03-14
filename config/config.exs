@@ -21,7 +21,7 @@ config :bookmoves, :scopes,
   ]
 
 config :bookmoves,
-  ecto_repos: [Bookmoves.Repo],
+  ecto_repos: [Bookmoves.Repo, Bookmoves.GamesRepo],
   generators: [timestamp_type: :utc_datetime],
   pgn_parse_timeout_ms: 1_500
 
