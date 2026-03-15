@@ -11,6 +11,7 @@ defmodule Bookmoves.Openings.LichessImport do
   @default_positions_batch_size 100_000
   @default_games_log_every 50_000
   @default_positions_log_every 1_000_000
+  @max_positions_ply 60
   @lichess_url_regex ~r/https?:\/\/lichess\.org\/([A-Za-z0-9]{8,16})(?=$|[\s;"])/
   @postgres_copy_columns "game_id,material_shard_id,ply,zobrist_hash"
   @postgres_copy_query "COPY positions (#{@postgres_copy_columns}) FROM STDIN WITH (FORMAT csv)"
@@ -570,6 +571,17 @@ defmodule Bookmoves.Openings.LichessImport do
       :skip ->
         {:ok, state}
 
+      {:skip, next_game_id, next_ply} ->
+        state =
+          %{
+            state
+            | current_game_id: next_game_id,
+              current_ply: next_ply,
+              processed_count: state.processed_count + 1
+          }
+
+        {:ok, maybe_log_progress(state, phase_label)}
+
       {:error, reason} ->
         {:error, reason}
 
@@ -662,7 +674,10 @@ defmodule Bookmoves.Openings.LichessImport do
   end
 
   @spec build_position_row(String.t(), integer() | nil, integer()) ::
-          {:ok, map(), integer(), integer()} | :skip | {:error, :invalid_epd_line | :invalid_fen}
+          {:ok, map(), integer(), integer()}
+          | {:skip, integer(), integer()}
+          | :skip
+          | {:error, :invalid_epd_line | :invalid_fen}
   defp build_position_row(line, current_game_id, current_ply) do
     trimmed = String.trim(line)
 
@@ -672,18 +687,23 @@ defmodule Bookmoves.Openings.LichessImport do
       with {:ok, board, side, castling, ep_target, epd_remainder} <- parse_epd_line(trimmed),
            {:ok, lichess_id} <- extract_lichess_id_from_epd(epd_remainder),
            game_id <- GameId.from_lichess_id(lichess_id),
-           next_ply <- if(game_id == current_game_id, do: current_ply + 1, else: 0),
-           fen <- Enum.join([board, side, castling, ep_target], " "),
-           {:ok, {_material_key, material_shard_id}} <-
-             MaterialShard.from_board_and_side(board, side),
-           {:ok, zobrist_hash} <- Zobrist.hash_fen(fen) do
-        {:ok,
-         %{
-           game_id: game_id,
-           ply: next_ply,
-           zobrist_hash: zobrist_hash,
-           material_shard_id: material_shard_id
-         }, game_id, next_ply}
+           next_ply <- if(game_id == current_game_id, do: current_ply + 1, else: 0) do
+        if next_ply > @max_positions_ply do
+          {:skip, game_id, next_ply}
+        else
+          with fen <- Enum.join([board, side, castling, ep_target], " "),
+               {:ok, {_material_key, material_shard_id}} <-
+                 MaterialShard.from_board_and_side(board, side),
+               {:ok, zobrist_hash} <- Zobrist.hash_fen(fen) do
+            {:ok,
+             %{
+               game_id: game_id,
+               ply: next_ply,
+               zobrist_hash: zobrist_hash,
+               material_shard_id: material_shard_id
+             }, game_id, next_ply}
+          end
+        end
       else
         {:error, :invalid_fen} -> {:error, :invalid_fen}
         _ -> {:error, :invalid_epd_line}
