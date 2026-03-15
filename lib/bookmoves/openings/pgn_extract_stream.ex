@@ -1,70 +1,62 @@
 defmodule Bookmoves.Openings.PgnExtractStream do
   @moduledoc false
 
-  @line_buffer_size 1_048_576
+  @type stream_state :: %{io_device: IO.device(), spool_path: String.t()}
 
   @spec stream_epd_lines(Path.t()) :: Enumerable.t()
   def stream_epd_lines(pgn_path) when is_binary(pgn_path) do
     Stream.resource(
-      fn -> open_port!(pgn_path) end,
+      fn -> open_spooled_stream!(pgn_path) end,
       &next_line/1,
-      &close_port/1
+      &close_stream/1
     )
   end
 
-  @spec open_port!(Path.t()) :: %{partial: String.t(), port: port(), finished?: boolean()}
-  defp open_port!(pgn_path) do
+  @spec open_spooled_stream!(Path.t()) :: stream_state()
+  defp open_spooled_stream!(pgn_path) do
     executable =
       System.find_executable("pgn-extract") ||
         raise "pgn-extract executable not found in PATH"
 
-    port =
-      Port.open(
-        {:spawn_executable, executable},
-        [
-          :binary,
-          :exit_status,
-          :hide,
-          :use_stdio,
-          args: ["-s", "-Wepd", "--nofauxep", pgn_path],
-          line: @line_buffer_size
-        ]
+    spool_path =
+      Path.join(
+        System.tmp_dir!(),
+        "bookmoves_epd_#{System.unique_integer([:positive, :monotonic])}.tmp"
       )
 
-    %{port: port, partial: "", finished?: false}
+    args = ["--quiet", "-s", "-Wepd", "--nofauxep", "--output", spool_path, pgn_path]
+
+    {_output, status} = System.cmd(executable, args)
+
+    if status != 0 do
+      raise "pgn-extract exited with status #{status}"
+    end
+
+    %{io_device: File.open!(spool_path, [:read, :binary]), spool_path: spool_path}
   end
 
-  @spec next_line(%{partial: String.t(), port: port(), finished?: boolean()}) ::
-          {[String.t()], %{partial: String.t(), port: port(), finished?: boolean()}}
-          | {:halt, %{partial: String.t(), port: port(), finished?: boolean()}}
-  defp next_line(%{finished?: true} = state), do: {:halt, state}
+  @spec next_line(stream_state()) :: {[String.t()], stream_state()} | {:halt, stream_state()}
+  defp next_line(%{io_device: io_device} = state) do
+    case IO.read(io_device, :line) do
+      :eof ->
+        {:halt, state}
 
-  defp next_line(%{port: port, partial: partial} = state) do
-    receive do
-      {^port, {:data, {:eol, line}}} ->
-        {[partial <> line], %{state | partial: ""}}
-
-      {^port, {:data, {:noeol, chunk}}} ->
-        next_line(%{state | partial: partial <> chunk})
-
-      {^port, {:exit_status, 0}} when partial == "" ->
-        {:halt, %{state | finished?: true}}
-
-      {^port, {:exit_status, 0}} ->
-        # finished? is a smart way to emit the final chunk if it doesn't have an EOL
-        {[partial], %{state | partial: "", finished?: true}}
-
-      {^port, {:exit_status, status}} ->
-        raise "pgn-extract exited with status #{status}"
+      line when is_binary(line) ->
+        {[trim_line(line)], state}
     end
   end
 
-  @spec close_port(%{port: port()}) :: :ok
-  defp close_port(%{port: port}) do
-    if Port.info(port) != nil do
-      Port.close(port)
-    end
+  @spec trim_line(String.t()) :: String.t()
+  defp trim_line(line) do
+    line
+    |> String.trim_trailing("\n")
+    |> String.trim_trailing("\r")
+  end
 
+  @spec close_stream(stream_state()) :: :ok
+  defp close_stream(%{io_device: io_device, spool_path: spool_path}) do
+    File.close(io_device)
+    File.rm(spool_path)
     :ok
   end
 end

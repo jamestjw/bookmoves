@@ -36,15 +36,34 @@ defmodule Bookmoves.Openings.LichessImport do
 
   @spec run(Path.t(), keyword()) :: {:ok, run_stats()} | {:error, term()}
   def run(path, opts \\ []) when is_binary(path) and is_list(opts) do
-    games_batch_size = Keyword.get(opts, :games_batch_size, @default_games_batch_size)
-    positions_batch_size = Keyword.get(opts, :positions_batch_size, @default_positions_batch_size)
+    games_batch_size =
+      opts
+      |> Keyword.get(:games_batch_size, @default_games_batch_size)
+      |> normalize_positive_integer(@default_games_batch_size)
 
-    with :ok <- ensure_file(path),
-         {:ok, games_inserted} <- import_games(path, games_batch_size),
-         {:ok, positions_inserted} <- import_positions(path, positions_batch_size) do
-      {:ok, %{games_inserted: games_inserted, positions_inserted: positions_inserted}}
+    positions_batch_size =
+      opts
+      |> Keyword.get(:positions_batch_size, @default_positions_batch_size)
+      |> normalize_positive_integer(@default_positions_batch_size)
+
+    previous_queue_data_mode = Process.flag(:message_queue_data, :off_heap)
+
+    try do
+      with :ok <- ensure_file(path),
+           {:ok, games_inserted} <- import_games(path, games_batch_size),
+           {:ok, positions_inserted} <- import_positions(path, positions_batch_size) do
+        {:ok, %{games_inserted: games_inserted, positions_inserted: positions_inserted}}
+      end
+    after
+      Process.flag(:message_queue_data, previous_queue_data_mode)
     end
   end
+
+  @spec normalize_positive_integer(term(), pos_integer()) :: pos_integer()
+  defp normalize_positive_integer(value, _fallback) when is_integer(value) and value > 0,
+    do: value
+
+  defp normalize_positive_integer(_value, fallback), do: fallback
 
   @spec ensure_file(Path.t()) :: :ok | {:error, :enoent | :not_a_file}
   defp ensure_file(path) do
@@ -126,8 +145,11 @@ defmodule Bookmoves.Openings.LichessImport do
   defp maybe_flush_games_batch(batch, batch_count, batch_size) do
     if batch_count >= batch_size do
       case insert_games_batch(batch) do
-        {:ok, inserted_count} -> {:ok, inserted_count, [], 0}
-        {:error, reason} -> {:error, reason}
+        {:ok, inserted_count} ->
+          {:ok, inserted_count, [], 0}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     else
       {:ok, 0, batch, batch_count}
@@ -358,11 +380,12 @@ defmodule Bookmoves.Openings.LichessImport do
                maybe_flush_positions_batch(next_batch, next_batch_count, batch_size) do
           {:ok,
            %{
-             current_game_id: next_game_id,
-             current_ply: next_ply,
-             batch: flushed_batch,
-             batch_count: flushed_batch_count,
-             inserted_count: state.inserted_count + inserted_now
+             state
+             | current_game_id: next_game_id,
+               current_ply: next_ply,
+               batch: flushed_batch,
+               batch_count: flushed_batch_count,
+               inserted_count: state.inserted_count + inserted_now
            }}
         end
     end
@@ -373,8 +396,11 @@ defmodule Bookmoves.Openings.LichessImport do
   defp maybe_flush_positions_batch(batch, batch_count, batch_size) do
     if batch_count >= batch_size do
       case insert_positions_batch(batch) do
-        {:ok, inserted_count} -> {:ok, inserted_count, [], 0}
-        {:error, reason} -> {:error, reason}
+        {:ok, inserted_count} ->
+          {:ok, inserted_count, [], 0}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     else
       {:ok, 0, batch, batch_count}
