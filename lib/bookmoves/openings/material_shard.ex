@@ -3,12 +3,40 @@ defmodule Bookmoves.Openings.MaterialShard do
   Computes a material-based shard key from FEN.
 
   Sharding packs piece counts (queens, rooks, minors per side) plus side-to-move into a
-  19-bit `material_key`, then maps it to `material_shard_id` with `rem(material_key, 32_768)`.
+  19-bit `material_key`, then mixes it into a stable 15-bit `material_shard_id` in
+  `0..32767`.
+
+  The mapping is deterministic and depends only on board material and side-to-move, so
+  sequential branch traversal keeps material-locality semantics.
+
+  Algorithm details:
+
+  1. Build `material_key` (19 bits):
+     - bits 16..18: white queens
+     - bits 13..15: black queens
+     - bits 10..12: white rooks
+     - bits 7..9: black rooks
+     - bits 4..6: white minors (bishops + knights)
+     - bits 1..3: black minors (bishops + knights)
+     - bit 0: side to move (`w = 0`, `b = 1`)
+  2. Fold upper key bits into the 15-bit shard domain with xor.
+  3. Apply an affine mix (`* 20_273 + 13_849`) inside modulo `2^15`.
+  4. Apply one xor-shift step and mask to 15 bits.
+
+  Why these constants:
+
+  - The shard space is `2^15`, so we intentionally map 19-bit keys to 15 bits.
+  - Affine constants are odd so the linear step is invertible in modulo `2^15`.
+  - The pair (`20_273`, `13_849`) was selected empirically as a low-cost mixer to reduce
+    observed partition skew versus plain `rem(material_key, 32_768)`.
   """
 
   import Bitwise
 
   @shard_count 32_768
+  @shard_mask @shard_count - 1
+  @mix_multiplier 20_273
+  @mix_increment 13_849
 
   @type result :: {material_key :: non_neg_integer(), material_shard_id :: non_neg_integer()}
 
@@ -25,19 +53,32 @@ defmodule Bookmoves.Openings.MaterialShard do
 
   @spec from_board_and_side(String.t(), String.t()) :: {:ok, result()} | {:error, :invalid_fen}
   def from_board_and_side(board, side) when is_binary(board) and is_binary(side) do
+    with {:ok, material_key} <- material_key(board, side) do
+      {:ok, {material_key, material_shard_id(material_key)}}
+    end
+  end
+
+  @spec material_key(String.t(), String.t()) :: {:ok, non_neg_integer()} | {:error, :invalid_fen}
+  defp material_key(board, side) do
     with {:ok, counts} <- piece_counts(board),
          {:ok, side_to_move} <- side_to_move_bit(side) do
-      material_key =
-        clamp_3bit(counts.white_queens) <<< 16 |||
-          clamp_3bit(counts.black_queens) <<< 13 |||
-          clamp_3bit(counts.white_rooks) <<< 10 |||
-          clamp_3bit(counts.black_rooks) <<< 7 |||
-          clamp_3bit(counts.white_minors) <<< 4 |||
-          clamp_3bit(counts.black_minors) <<< 1 |||
-          side_to_move
-
-      {:ok, {material_key, rem(material_key, @shard_count)}}
+      {:ok,
+       clamp_3bit(counts.white_queens) <<< 16 |||
+         clamp_3bit(counts.black_queens) <<< 13 |||
+         clamp_3bit(counts.white_rooks) <<< 10 |||
+         clamp_3bit(counts.black_rooks) <<< 7 |||
+         clamp_3bit(counts.white_minors) <<< 4 |||
+         clamp_3bit(counts.black_minors) <<< 1 |||
+         side_to_move}
     end
+  end
+
+  @spec material_shard_id(non_neg_integer()) :: non_neg_integer()
+  defp material_shard_id(material_key) do
+    folded = bxor(material_key &&& @shard_mask, material_key >>> 15)
+    mixed = folded * @mix_multiplier + @mix_increment
+
+    bxor(mixed, mixed >>> 9) &&& @shard_mask
   end
 
   @spec clamp_3bit(non_neg_integer()) :: 0..7

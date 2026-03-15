@@ -68,3 +68,5 @@ Configuration:
   answering moves.
 - Non-due but correct moves are acknowledged without penalty.
 - PGN import is fully server-validated (lexer/parser + legal move replay) before persistence.
+- Openings material sharding details and tuning notes are documented in
+  `docs/OPENINGS_MATERIAL_SHARDING.md`.
