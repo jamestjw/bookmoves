@@ -20,7 +20,7 @@ defmodule Bookmoves.GamesRepo.Migrations.CreateGamesAndPositions do
 
     execute("""
     CREATE TABLE positions (
-      game_id BIGINT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      game_id BIGINT NOT NULL,
       ply SMALLINT NOT NULL,
       zobrist_hash BIGINT NOT NULL,
       material_shard_id SMALLINT NOT NULL,

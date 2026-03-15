@@ -8,7 +8,7 @@ defmodule Bookmoves.Openings.LichessImport do
   alias Bookmoves.Openings.Zobrist
 
   @default_games_batch_size 2_000
-  @default_positions_batch_size 10_000
+  @default_positions_batch_size 100_000
   @default_games_log_every 50_000
   @default_positions_log_every 1_000_000
   @lichess_url_regex ~r/https?:\/\/lichess\.org\/([A-Za-z0-9]{8,16})(?=$|[\s;"])/
@@ -717,10 +717,23 @@ defmodule Bookmoves.Openings.LichessImport do
   defp insert_positions_batch([], _import_mode, _copy_conn), do: {:ok, 0}
 
   defp insert_positions_batch(rows, import_mode, copy_conn) do
-    inserted_count = insert_positions(rows, import_mode, copy_conn)
+    sorted_rows = sort_positions_rows(rows)
+    inserted_count = insert_positions(sorted_rows, import_mode, copy_conn)
     {:ok, inserted_count}
   rescue
     error -> {:error, normalize_insert_error(error)}
+  end
+
+  @spec sort_positions_rows(list(map())) :: list(map())
+  defp sort_positions_rows(rows) do
+    Enum.sort_by(rows, fn %{
+                            material_shard_id: material_shard_id,
+                            zobrist_hash: zobrist_hash,
+                            game_id: game_id,
+                            ply: ply
+                          } ->
+      {material_shard_id, zobrist_hash, game_id, ply}
+    end)
   end
 
   @spec timed_insert_positions_batch(list(map()), :append_only | :idempotent, pid() | nil) ::
