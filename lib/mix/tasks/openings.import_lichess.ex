@@ -15,9 +15,7 @@ defmodule Mix.Tasks.Openings.ImportLichess do
     {opts, positional, invalid} = OptionParser.parse(args, strict: @switches)
 
     if invalid != [] do
-      invalid
-      |> Enum.map_join(", ", fn {flag, _value} -> "--#{flag}" end)
-      |> then(&raise "invalid option(s): #{&1}")
+      raise "invalid option(s): #{format_invalid_options(invalid)}"
     end
 
     pgn_path =
@@ -34,5 +32,17 @@ defmodule Mix.Tasks.Openings.ImportLichess do
       {:error, reason} ->
         raise "import failed: #{inspect(reason)}"
     end
+  end
+
+  @spec format_invalid_options([{atom() | String.t(), term()}]) :: String.t()
+  defp format_invalid_options(invalid) do
+    invalid
+    |> Enum.map(fn {option, _value} ->
+      option
+      |> to_string()
+      |> String.trim_leading("-")
+      |> then(&"--#{&1}")
+    end)
+    |> Enum.join(", ")
   end
 end
