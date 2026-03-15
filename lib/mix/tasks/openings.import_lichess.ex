@@ -28,19 +28,30 @@ defmodule Mix.Tasks.Openings.ImportLichess do
       end
 
     import_mode = if Keyword.get(opts, :idempotent, false), do: :idempotent, else: :append_only
+    started_at = DateTime.utc_now()
+    started_ms = System.monotonic_time(:millisecond)
 
     IO.puts("import mode: #{import_mode}")
+    IO.puts("started at: #{DateTime.to_iso8601(started_at)}")
 
-    case Openings.import_lichess_pgn(pgn_path, opts) do
-      {:ok, %{games_inserted: games_inserted, positions_inserted: positions_inserted}} ->
-        IO.puts("games inserted: #{games_inserted}")
-        IO.puts("positions inserted: #{positions_inserted}")
+    try do
+      case Openings.import_lichess_pgn(pgn_path, opts) do
+        {:ok, %{games_inserted: games_inserted, positions_inserted: positions_inserted}} ->
+          IO.puts("games inserted: #{games_inserted}")
+          IO.puts("positions inserted: #{positions_inserted}")
 
-      {:error, :unique_violation} ->
-        raise "import failed: duplicate data detected in append_only mode. rerun with --idempotent if deduplication is expected"
+        {:error, :unique_violation} ->
+          raise "import failed: duplicate data detected in append_only mode. rerun with --idempotent if deduplication is expected"
 
-      {:error, reason} ->
-        raise "import failed: #{inspect(reason)}"
+        {:error, reason} ->
+          raise "import failed: #{inspect(reason)}"
+      end
+    after
+      ended_at = DateTime.utc_now()
+      elapsed_ms = System.monotonic_time(:millisecond) - started_ms
+
+      IO.puts("ended at: #{DateTime.to_iso8601(ended_at)}")
+      IO.puts("elapsed: #{elapsed_ms} ms")
     end
   end
 
