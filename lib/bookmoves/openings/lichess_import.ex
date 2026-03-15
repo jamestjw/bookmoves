@@ -13,6 +13,19 @@ defmodule Bookmoves.Openings.LichessImport do
   @lichess_url_regex ~r/https?:\/\/lichess\.org\/([A-Za-z0-9]{8,16})(?=$|[\s;"])/
   @tag_regex ~r/^\[([^\s]+)\s+"(.*)"\]$/
 
+  @outcome_unknown 0
+  @outcome_white_win 1
+  @outcome_black_win 2
+  @outcome_draw 3
+
+  @time_control_unknown 0
+  @time_control_ultrabullet 1
+  @time_control_bullet 2
+  @time_control_blitz 3
+  @time_control_rapid 4
+  @time_control_classical 5
+  @time_control_correspondence 6
+
   @type run_stats :: %{games_inserted: non_neg_integer(), positions_inserted: non_neg_integer()}
 
   @type parser_state :: %{
@@ -180,6 +193,8 @@ defmodule Bookmoves.Openings.LichessImport do
         lichess_id: lichess_id,
         white_elo: parse_elo(Map.get(headers, "WhiteElo")),
         black_elo: parse_elo(Map.get(headers, "BlackElo")),
+        outcome: parse_outcome(Map.get(headers, "Result")),
+        time_control: parse_time_control(Map.get(headers, "TimeControl")),
         moves_pgn: moves_pgn
       }
     else
@@ -221,6 +236,40 @@ defmodule Bookmoves.Openings.LichessImport do
       _ -> nil
     end
   end
+
+  @spec parse_outcome(String.t() | nil) :: 0..3
+  defp parse_outcome("1-0"), do: @outcome_white_win
+  defp parse_outcome("0-1"), do: @outcome_black_win
+  defp parse_outcome("1/2-1/2"), do: @outcome_draw
+  defp parse_outcome(_other), do: @outcome_unknown
+
+  @spec parse_time_control(String.t() | nil) :: 0..6
+  defp parse_time_control(nil), do: @time_control_unknown
+  defp parse_time_control("-"), do: @time_control_unknown
+
+  defp parse_time_control(time_control) do
+    case String.split(time_control, "+", parts: 2) do
+      [base_seconds, increment_seconds] ->
+        with {base, ""} <- Integer.parse(base_seconds),
+             {increment, ""} <- Integer.parse(increment_seconds),
+             true <- base >= 0 and increment >= 0 do
+          classify_time_control(base + 40 * increment)
+        else
+          _ -> @time_control_unknown
+        end
+
+      _ ->
+        @time_control_unknown
+    end
+  end
+
+  @spec classify_time_control(non_neg_integer()) :: 0..6
+  defp classify_time_control(seconds) when seconds <= 29, do: @time_control_ultrabullet
+  defp classify_time_control(seconds) when seconds <= 179, do: @time_control_bullet
+  defp classify_time_control(seconds) when seconds <= 479, do: @time_control_blitz
+  defp classify_time_control(seconds) when seconds <= 1499, do: @time_control_rapid
+  defp classify_time_control(seconds) when seconds <= 21_599, do: @time_control_classical
+  defp classify_time_control(_seconds), do: @time_control_correspondence
 
   @spec append_if_present([map()], map() | nil) :: [map()]
   defp append_if_present(batch, nil), do: batch
