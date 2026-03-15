@@ -15,6 +15,7 @@ defmodule Bookmoves.Openings.LichessImport do
   @lichess_url_regex ~r/https?:\/\/lichess\.org\/([A-Za-z0-9]{8,16})(?=$|[\s;"])/
   @postgres_copy_columns "game_id,material_shard_id,ply,zobrist_hash"
   @postgres_copy_query "COPY positions (#{@postgres_copy_columns}) FROM STDIN WITH (FORMAT csv)"
+  @postgres_copy_transaction_opts [timeout: :infinity]
   @postgres_conn_keys [
     :hostname,
     :port,
@@ -813,10 +814,14 @@ defmodule Bookmoves.Openings.LichessImport do
 
   @spec copy_positions_batch!(pid(), list(map())) :: non_neg_integer()
   defp copy_positions_batch!(conn, rows) do
-    case Postgrex.transaction(conn, fn tx_conn ->
-           copy_stream = Postgrex.stream(tx_conn, @postgres_copy_query, [])
-           _ = Enum.into(Stream.map(rows, &position_csv_line/1), copy_stream)
-         end) do
+    case Postgrex.transaction(
+           conn,
+           fn tx_conn ->
+             copy_stream = Postgrex.stream(tx_conn, @postgres_copy_query, [])
+             _ = Enum.into(Stream.map(rows, &position_csv_line/1), copy_stream)
+           end,
+           @postgres_copy_transaction_opts
+         ) do
       {:ok, _result} -> length(rows)
       {:error, error} -> raise error
     end
