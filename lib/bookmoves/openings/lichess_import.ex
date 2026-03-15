@@ -12,6 +12,22 @@ defmodule Bookmoves.Openings.LichessImport do
   @default_games_log_every 50_000
   @default_positions_log_every 1_000_000
   @lichess_url_regex ~r/https?:\/\/lichess\.org\/([A-Za-z0-9]{8,16})(?=$|[\s;"])/
+  @postgres_copy_columns "game_id,material_shard_id,ply,zobrist_hash"
+  @postgres_copy_query "COPY positions (#{@postgres_copy_columns}) FROM STDIN WITH (FORMAT csv)"
+  @postgres_conn_keys [
+    :hostname,
+    :port,
+    :username,
+    :password,
+    :database,
+    :ssl,
+    :socket,
+    :socket_dir,
+    :parameters,
+    :timeout,
+    :connect_timeout,
+    :types
+  ]
 
   @tag_regex ~r/^\[([^\s]+)\s+"(.*)"\]$/
 
@@ -217,7 +233,7 @@ defmodule Bookmoves.Openings.LichessImport do
   @spec process_game_line(
           %{
             parser: parser_state(),
-            batch: [map()],
+            batch: list(map()),
             batch_count: non_neg_integer(),
             inserted_count: non_neg_integer(),
             insert_ms: non_neg_integer(),
@@ -225,7 +241,8 @@ defmodule Bookmoves.Openings.LichessImport do
             processed_count: non_neg_integer(),
             log_every: non_neg_integer(),
             next_log_at: non_neg_integer(),
-            phase_started_ms: non_neg_integer()
+            phase_started_ms: non_neg_integer(),
+            copy_conn: pid() | nil
           },
           String.t(),
           pos_integer(),
@@ -235,7 +252,7 @@ defmodule Bookmoves.Openings.LichessImport do
           {:ok,
            %{
              parser: parser_state(),
-             batch: [map()],
+             batch: list(map()),
              batch_count: non_neg_integer(),
              inserted_count: non_neg_integer(),
              insert_ms: non_neg_integer(),
@@ -243,7 +260,8 @@ defmodule Bookmoves.Openings.LichessImport do
              processed_count: non_neg_integer(),
              log_every: non_neg_integer(),
              next_log_at: non_neg_integer(),
-             phase_started_ms: non_neg_integer()
+             phase_started_ms: non_neg_integer(),
+             copy_conn: pid() | nil
            }}
           | {:error, term()}
   defp process_game_line(state, raw_line, batch_size, import_mode, phase_label) do
@@ -272,12 +290,12 @@ defmodule Bookmoves.Openings.LichessImport do
   end
 
   @spec maybe_flush_games_batch(
-          [map()],
+          list(map()),
           non_neg_integer(),
           pos_integer(),
           :append_only | :idempotent
         ) ::
-          {:ok, non_neg_integer(), [map()], non_neg_integer(), non_neg_integer(),
+          {:ok, non_neg_integer(), list(map()), non_neg_integer(), non_neg_integer(),
            non_neg_integer()}
           | {:error, term()}
   defp maybe_flush_games_batch(batch, batch_count, batch_size, import_mode) do
@@ -431,11 +449,11 @@ defmodule Bookmoves.Openings.LichessImport do
   defp classify_time_control(seconds) when seconds <= 21_599, do: @time_control_classical
   defp classify_time_control(_seconds), do: @time_control_correspondence
 
-  @spec append_if_present([map()], map() | nil) :: [map()]
+  @spec append_if_present(list(map()), map() | nil) :: list(map())
   defp append_if_present(batch, nil), do: batch
   defp append_if_present(batch, row), do: [row | batch]
 
-  @spec insert_games_batch([map()], :append_only | :idempotent) ::
+  @spec insert_games_batch(list(map()), :append_only | :idempotent) ::
           {:ok, non_neg_integer()} | {:error, term()}
   defp insert_games_batch([], _import_mode), do: {:ok, 0}
 
@@ -446,10 +464,8 @@ defmodule Bookmoves.Openings.LichessImport do
     error -> {:error, normalize_insert_error(error)}
   end
 
-  @spec timed_insert_games_batch([map()], :append_only | :idempotent) ::
+  @spec timed_insert_games_batch(list(map()), :append_only | :idempotent) ::
           {:ok, non_neg_integer(), non_neg_integer(), non_neg_integer()} | {:error, term()}
-  defp timed_insert_games_batch([], _import_mode), do: {:ok, 0, 0, 0}
-
   defp timed_insert_games_batch(rows, import_mode) do
     {insert_result, elapsed_ms} = timed(fn -> insert_games_batch(rows, import_mode) end)
 
@@ -468,40 +484,47 @@ defmodule Bookmoves.Openings.LichessImport do
            }}
           | {:error, term()}
   defp import_positions(path, batch_size, import_mode, log_every) do
-    initial = %{
-      current_game_id: nil,
-      current_ply: -1,
-      batch: [],
-      batch_count: 0,
-      inserted_count: 0,
-      insert_ms: 0,
-      insert_batches: 0,
-      processed_count: 0,
-      log_every: log_every,
-      next_log_at: log_every,
-      phase_started_ms: System.monotonic_time(:millisecond)
-    }
+    with_positions_copy_connection(import_mode, fn copy_conn ->
+      initial = %{
+        current_game_id: nil,
+        current_ply: -1,
+        batch: [],
+        batch_count: 0,
+        inserted_count: 0,
+        insert_ms: 0,
+        insert_batches: 0,
+        processed_count: 0,
+        log_every: log_every,
+        next_log_at: log_every,
+        phase_started_ms: System.monotonic_time(:millisecond),
+        copy_conn: copy_conn
+      }
 
-    result =
-      path
-      |> PgnExtractStream.stream_epd_lines()
-      |> Enum.reduce_while(initial, fn line, state ->
-        case process_position_line(state, line, batch_size, import_mode, :positions) do
-          {:ok, next_state} -> {:cont, next_state}
-          {:error, reason} -> {:halt, {:error, reason}}
-        end
-      end)
+      result =
+        path
+        |> PgnExtractStream.stream_epd_lines()
+        |> Enum.reduce_while(initial, fn line, state ->
+          case process_position_line(state, line, batch_size, import_mode, :positions) do
+            {:ok, next_state} -> {:cont, next_state}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+        end)
 
-    with final_state when is_map(final_state) <- result,
-         {:ok, inserted_in_final_flush, final_insert_ms, final_insert_batches} <-
-           timed_insert_positions_batch(final_state.batch, import_mode) do
-      {:ok,
-       %{
-         inserted_count: final_state.inserted_count + inserted_in_final_flush,
-         insert_ms: final_state.insert_ms + final_insert_ms,
-         insert_batches: final_state.insert_batches + final_insert_batches
-       }}
-    else
+      with final_state when is_map(final_state) <- result,
+           {:ok, inserted_in_final_flush, final_insert_ms, final_insert_batches} <-
+             timed_insert_positions_batch(final_state.batch, import_mode, final_state.copy_conn) do
+        {:ok,
+         %{
+           inserted_count: final_state.inserted_count + inserted_in_final_flush,
+           insert_ms: final_state.insert_ms + final_insert_ms,
+           insert_batches: final_state.insert_batches + final_insert_batches
+         }}
+      else
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+    |> case do
+      {:ok, result} -> result
       {:error, reason} -> {:error, reason}
     end
   rescue
@@ -512,7 +535,7 @@ defmodule Bookmoves.Openings.LichessImport do
           %{
             current_game_id: integer() | nil,
             current_ply: integer(),
-            batch: [map()],
+            batch: list(map()),
             batch_count: non_neg_integer(),
             inserted_count: non_neg_integer(),
             insert_ms: non_neg_integer(),
@@ -531,7 +554,7 @@ defmodule Bookmoves.Openings.LichessImport do
            %{
              current_game_id: integer() | nil,
              current_ply: integer(),
-             batch: [map()],
+             batch: list(map()),
              batch_count: non_neg_integer(),
              inserted_count: non_neg_integer(),
              insert_ms: non_neg_integer(),
@@ -556,7 +579,13 @@ defmodule Bookmoves.Openings.LichessImport do
 
         with {:ok, inserted_now, flushed_batch, flushed_batch_count, inserted_ms_now,
               inserted_batches_now} <-
-               maybe_flush_positions_batch(next_batch, next_batch_count, batch_size, import_mode) do
+               maybe_flush_positions_batch(
+                 next_batch,
+                 next_batch_count,
+                 batch_size,
+                 import_mode,
+                 state.copy_conn
+               ) do
           state =
             %{
               state
@@ -576,17 +605,18 @@ defmodule Bookmoves.Openings.LichessImport do
   end
 
   @spec maybe_flush_positions_batch(
-          [map()],
+          list(map()),
           non_neg_integer(),
           pos_integer(),
-          :append_only | :idempotent
+          :append_only | :idempotent,
+          pid() | nil
         ) ::
-          {:ok, non_neg_integer(), [map()], non_neg_integer(), non_neg_integer(),
+          {:ok, non_neg_integer(), list(map()), non_neg_integer(), non_neg_integer(),
            non_neg_integer()}
           | {:error, term()}
-  defp maybe_flush_positions_batch(batch, batch_count, batch_size, import_mode) do
+  defp maybe_flush_positions_batch(batch, batch_count, batch_size, import_mode, copy_conn) do
     if batch_count >= batch_size do
-      case timed_insert_positions_batch(batch, import_mode) do
+      case timed_insert_positions_batch(batch, import_mode, copy_conn) do
         {:ok, inserted_count, inserted_ms, inserted_batches} ->
           {:ok, inserted_count, [], 0, inserted_ms, inserted_batches}
 
@@ -644,7 +674,7 @@ defmodule Bookmoves.Openings.LichessImport do
            game_id <- GameId.from_lichess_id(lichess_id),
            next_ply <- if(game_id == current_game_id, do: current_ply + 1, else: 0),
            fen <- Enum.join([board, side, castling, ep_target], " "),
-           {:ok, {material_key, material_shard_id}} <-
+           {:ok, {_material_key, material_shard_id}} <-
              MaterialShard.from_board_and_side(board, side),
            {:ok, zobrist_hash} <- Zobrist.hash_fen(fen) do
         {:ok,
@@ -652,7 +682,6 @@ defmodule Bookmoves.Openings.LichessImport do
            game_id: game_id,
            ply: next_ply,
            zobrist_hash: zobrist_hash,
-           material_key: material_key,
            material_shard_id: material_shard_id
          }, game_id, next_ply}
       else
@@ -683,28 +712,95 @@ defmodule Bookmoves.Openings.LichessImport do
     end
   end
 
-  @spec insert_positions_batch([map()], :append_only | :idempotent) ::
+  @spec insert_positions_batch(list(map()), :append_only | :idempotent, pid() | nil) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  defp insert_positions_batch([], _import_mode), do: {:ok, 0}
+  defp insert_positions_batch([], _import_mode, _copy_conn), do: {:ok, 0}
 
-  defp insert_positions_batch(rows, import_mode) do
-    {inserted_count, _rows} = insert_all_positions(rows, import_mode)
+  defp insert_positions_batch(rows, import_mode, copy_conn) do
+    inserted_count = insert_positions(rows, import_mode, copy_conn)
     {:ok, inserted_count}
   rescue
     error -> {:error, normalize_insert_error(error)}
   end
 
-  @spec timed_insert_positions_batch([map()], :append_only | :idempotent) ::
+  @spec timed_insert_positions_batch(list(map()), :append_only | :idempotent, pid() | nil) ::
           {:ok, non_neg_integer(), non_neg_integer(), non_neg_integer()} | {:error, term()}
-  defp timed_insert_positions_batch([], _import_mode), do: {:ok, 0, 0, 0}
+  defp timed_insert_positions_batch([], _import_mode, _copy_conn), do: {:ok, 0, 0, 0}
 
-  defp timed_insert_positions_batch(rows, import_mode) do
-    {insert_result, elapsed_ms} = timed(fn -> insert_positions_batch(rows, import_mode) end)
+  defp timed_insert_positions_batch(rows, import_mode, copy_conn) do
+    {insert_result, elapsed_ms} =
+      timed(fn -> insert_positions_batch(rows, import_mode, copy_conn) end)
 
     case insert_result do
       {:ok, inserted_count} -> {:ok, inserted_count, elapsed_ms, 1}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @spec insert_positions(list(map()), :append_only | :idempotent, pid() | nil) ::
+          non_neg_integer()
+  defp insert_positions(rows, @import_mode_append_only, copy_conn) when is_pid(copy_conn) do
+    copy_positions_batch!(copy_conn, rows)
+  end
+
+  defp insert_positions(rows, @import_mode_idempotent, _copy_conn) do
+    {inserted_count, _rows} = insert_all_positions(rows, @import_mode_idempotent)
+    inserted_count
+  end
+
+  @spec with_positions_copy_connection(:append_only | :idempotent, (pid() | nil -> term())) ::
+          {:ok, term()} | {:error, term()}
+  defp with_positions_copy_connection(@import_mode_idempotent, fun) when is_function(fun, 1) do
+    {:ok, fun.(nil)}
+  rescue
+    error -> {:error, error}
+  end
+
+  defp with_positions_copy_connection(@import_mode_append_only, fun) when is_function(fun, 1) do
+    with {:ok, conn} <- Postgrex.start_link(postgres_connect_opts()) do
+      try do
+        Postgrex.query!(conn, "SET synchronous_commit TO OFF", [])
+        {:ok, fun.(conn)}
+      rescue
+        error -> {:error, error}
+      after
+        GenServer.stop(conn)
+      end
+    end
+  rescue
+    error -> {:error, error}
+  end
+
+  @spec postgres_connect_opts() :: keyword()
+  defp postgres_connect_opts do
+    :bookmoves
+    |> Application.fetch_env!(GamesRepo)
+    |> Keyword.take(@postgres_conn_keys)
+  end
+
+  @spec copy_positions_batch!(pid(), list(map())) :: non_neg_integer()
+  defp copy_positions_batch!(conn, rows) do
+    case Postgrex.transaction(conn, fn tx_conn ->
+           copy_stream = Postgrex.stream(tx_conn, @postgres_copy_query, [])
+           _ = Enum.into(Stream.map(rows, &position_csv_line/1), copy_stream)
+         end) do
+      {:ok, _result} -> length(rows)
+      {:error, error} -> raise error
+    end
+  end
+
+  @spec position_csv_line(map()) :: iodata()
+  defp position_csv_line(row) do
+    [
+      Integer.to_string(row.game_id),
+      ",",
+      Integer.to_string(row.material_shard_id),
+      ",",
+      Integer.to_string(row.ply),
+      ",",
+      Integer.to_string(row.zobrist_hash),
+      "\n"
+    ]
   end
 
   @spec normalize_insert_error(term()) :: term()
@@ -713,7 +809,7 @@ defmodule Bookmoves.Openings.LichessImport do
 
   defp normalize_insert_error(error), do: error
 
-  @spec insert_all_games([map()], :append_only | :idempotent) ::
+  @spec insert_all_games(list(map()), :append_only | :idempotent) ::
           {non_neg_integer(), nil | [term()]}
   defp insert_all_games(rows, @import_mode_append_only) do
     GamesRepo.insert_all("games", rows, log: false)
@@ -729,12 +825,8 @@ defmodule Bookmoves.Openings.LichessImport do
     )
   end
 
-  @spec insert_all_positions([map()], :append_only | :idempotent) ::
+  @spec insert_all_positions(list(map()), :idempotent) ::
           {non_neg_integer(), nil | [term()]}
-  defp insert_all_positions(rows, @import_mode_append_only) do
-    GamesRepo.insert_all("positions", rows, log: false)
-  end
-
   defp insert_all_positions(rows, @import_mode_idempotent) do
     GamesRepo.insert_all(
       "positions",

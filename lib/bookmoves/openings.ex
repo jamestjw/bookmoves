@@ -5,8 +5,19 @@ defmodule Bookmoves.Openings do
   alias Bookmoves.Openings.LichessImport
 
   @type import_stats :: %{
-          games_inserted: non_neg_integer(),
-          positions_inserted: non_neg_integer()
+          required(:games_inserted) => non_neg_integer(),
+          required(:positions_inserted) => non_neg_integer(),
+          optional(:games_phase_ms) => non_neg_integer(),
+          optional(:positions_phase_ms) => non_neg_integer(),
+          optional(:games_parse_ms) => non_neg_integer(),
+          optional(:positions_parse_ms) => non_neg_integer(),
+          optional(:games_insert_ms) => non_neg_integer(),
+          optional(:positions_insert_ms) => non_neg_integer(),
+          optional(:games_insert_batches) => non_neg_integer(),
+          optional(:positions_insert_batches) => non_neg_integer(),
+          optional(:total_ms) => non_neg_integer(),
+          optional(:games_per_sec) => float(),
+          optional(:positions_per_sec) => float()
         }
 
   @type fen_lookup_stats :: %{

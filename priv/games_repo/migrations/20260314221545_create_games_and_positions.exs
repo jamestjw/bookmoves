@@ -23,16 +23,13 @@ defmodule Bookmoves.GamesRepo.Migrations.CreateGamesAndPositions do
       game_id BIGINT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
       ply SMALLINT NOT NULL,
       zobrist_hash BIGINT NOT NULL,
-      material_key INTEGER NOT NULL,
-      material_shard_id INTEGER NOT NULL,
-      inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      material_shard_id SMALLINT NOT NULL,
       PRIMARY KEY (game_id, ply, material_shard_id)
     ) PARTITION BY RANGE (material_shard_id)
     """)
 
     Enum.each(0..(@partition_count - 1), fn partition_index ->
       from_value = partition_index * @shards_per_partition
-      to_value = from_value + @shards_per_partition
 
       partition_name =
         partition_index
@@ -40,11 +37,24 @@ defmodule Bookmoves.GamesRepo.Migrations.CreateGamesAndPositions do
         |> String.pad_leading(2, "0")
         |> then(&"positions_p#{&1}")
 
-      execute("""
-      CREATE TABLE #{partition_name}
-      PARTITION OF positions
-      FOR VALUES FROM (#{from_value}) TO (#{to_value})
-      """)
+      partition_sql =
+        if partition_index == @partition_count - 1 do
+          """
+          CREATE TABLE #{partition_name}
+          PARTITION OF positions
+          FOR VALUES FROM (#{from_value}) TO (MAXVALUE)
+          """
+        else
+          to_value = from_value + @shards_per_partition
+
+          """
+          CREATE TABLE #{partition_name}
+          PARTITION OF positions
+          FOR VALUES FROM (#{from_value}) TO (#{to_value})
+          """
+        end
+
+      execute(partition_sql)
     end)
 
     execute(

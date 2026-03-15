@@ -42,33 +42,34 @@ defmodule Mix.Tasks.Openings.ImportLichess do
 
     try do
       case Openings.import_lichess_pgn(pgn_path, opts) do
-        {:ok, %{games_inserted: games_inserted, positions_inserted: positions_inserted} = stats} ->
+        {:ok, stats} when is_map(stats) ->
+          games_inserted = Map.get(stats, :games_inserted, 0)
+          positions_inserted = Map.get(stats, :positions_inserted, 0)
+
           IO.puts("games inserted: #{games_inserted}")
           IO.puts("positions inserted: #{positions_inserted}")
 
-          if Map.has_key?(stats, :games_phase_ms) do
-            IO.puts(
-              "games phase: #{stats.games_phase_ms} ms (#{format_rate(stats.games_per_sec)} games/s)"
-            )
+          IO.puts(
+            "games phase: #{stats.games_phase_ms} ms (#{format_rate(stats.games_per_sec)} games/s)"
+          )
 
-            IO.puts("games parse/transform: #{stats.games_parse_ms} ms")
+          IO.puts("games parse/transform: #{stats.games_parse_ms} ms")
 
-            IO.puts(
-              "games db insert: #{stats.games_insert_ms} ms across #{stats.games_insert_batches} batches (avg #{avg_batch_ms(stats.games_insert_ms, stats.games_insert_batches)} ms/batch)"
-            )
+          IO.puts(
+            "games db insert: #{stats.games_insert_ms} ms across #{stats.games_insert_batches} batches (avg #{avg_batch_ms(stats.games_insert_ms, stats.games_insert_batches)} ms/batch)"
+          )
 
-            IO.puts(
-              "positions phase: #{stats.positions_phase_ms} ms (#{format_rate(stats.positions_per_sec)} positions/s)"
-            )
+          IO.puts(
+            "positions phase: #{stats.positions_phase_ms} ms (#{format_rate(stats.positions_per_sec)} positions/s)"
+          )
 
-            IO.puts("positions parse/hash: #{stats.positions_parse_ms} ms")
+          IO.puts("positions parse/hash: #{stats.positions_parse_ms} ms")
 
-            IO.puts(
-              "positions db insert: #{stats.positions_insert_ms} ms across #{stats.positions_insert_batches} batches (avg #{avg_batch_ms(stats.positions_insert_ms, stats.positions_insert_batches)} ms/batch)"
-            )
+          IO.puts(
+            "positions db insert: #{stats.positions_insert_ms} ms across #{stats.positions_insert_batches} batches (avg #{avg_batch_ms(stats.positions_insert_ms, stats.positions_insert_batches)} ms/batch)"
+          )
 
-            IO.puts("importer total: #{stats.total_ms} ms")
-          end
+          IO.puts("importer total: #{stats.total_ms} ms")
 
         {:error, :unique_violation} ->
           raise "import failed: duplicate data detected in append_only mode. rerun with --idempotent if deduplication is expected"
