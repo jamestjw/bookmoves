@@ -26,7 +26,7 @@ defmodule Bookmoves.Openings.PgnExtractStream do
           :exit_status,
           :hide,
           :use_stdio,
-          args: ["-s", "-Wepd", pgn_path],
+          args: ["-s", "-Wepd", "--nofauxep", pgn_path],
           line: @line_buffer_size
         ]
       )
