@@ -5,7 +5,7 @@ defmodule Mix.Tasks.Openings.ImportLichess do
 
   @shortdoc "Imports Lichess PGN games and EPD positions"
 
-  @switches [games_batch_size: :integer, positions_batch_size: :integer]
+  @switches [games_batch_size: :integer, positions_batch_size: :integer, idempotent: :boolean]
 
   @requirements ["app.start"]
 
@@ -20,14 +20,24 @@ defmodule Mix.Tasks.Openings.ImportLichess do
 
     pgn_path =
       case positional do
-        [path] -> path
-        _ -> raise "usage: mix openings.import_lichess <path_to_lichess_pgn>"
+        [path] ->
+          path
+
+        _ ->
+          raise "usage: mix openings.import_lichess <path_to_lichess_pgn> [--games-batch-size N] [--positions-batch-size N] [--idempotent]"
       end
+
+    import_mode = if Keyword.get(opts, :idempotent, false), do: :idempotent, else: :append_only
+
+    IO.puts("import mode: #{import_mode}")
 
     case Openings.import_lichess_pgn(pgn_path, opts) do
       {:ok, %{games_inserted: games_inserted, positions_inserted: positions_inserted}} ->
         IO.puts("games inserted: #{games_inserted}")
         IO.puts("positions inserted: #{positions_inserted}")
+
+      {:error, :unique_violation} ->
+        raise "import failed: duplicate data detected in append_only mode. rerun with --idempotent if deduplication is expected"
 
       {:error, reason} ->
         raise "import failed: #{inspect(reason)}"
