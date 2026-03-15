@@ -24,13 +24,19 @@ defmodule Bookmoves.Openings.PgnExtractStream do
         "bookmoves_epd_#{System.unique_integer([:positive, :monotonic])}.tmp"
       )
 
-    args = ["--quiet", "-s", "-Wepd", "--nofauxep", "--output", spool_path, pgn_path]
+    args = ["--quiet", "-s", "-Wepd", "--nofauxep", "-o", spool_path, pgn_path]
+    started_ms = System.monotonic_time(:millisecond)
 
     {_output, status} = System.cmd(executable, args)
 
     if status != 0 do
       raise "pgn-extract exited with status #{status}"
     end
+
+    elapsed_ms = System.monotonic_time(:millisecond) - started_ms
+    spool_bytes = spool_size_bytes(spool_path)
+
+    IO.puts("pgn-extract phase: #{elapsed_ms} ms, spool: #{format_mb(spool_bytes)} MB")
 
     %{io_device: File.open!(spool_path, [:read, :binary]), spool_path: spool_path}
   end
@@ -51,6 +57,21 @@ defmodule Bookmoves.Openings.PgnExtractStream do
     line
     |> String.trim_trailing("\n")
     |> String.trim_trailing("\r")
+  end
+
+  @spec spool_size_bytes(Path.t()) :: non_neg_integer()
+  defp spool_size_bytes(path) do
+    case File.stat(path) do
+      {:ok, %File.Stat{size: size}} when is_integer(size) and size >= 0 -> size
+      _ -> 0
+    end
+  end
+
+  @spec format_mb(non_neg_integer()) :: String.t()
+  defp format_mb(bytes) do
+    bytes
+    |> Kernel./(1024 * 1024)
+    |> :erlang.float_to_binary(decimals: 2)
   end
 
   @spec close_stream(stream_state()) :: :ok

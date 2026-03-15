@@ -21,10 +21,10 @@ defmodule Bookmoves.GamesRepo.Migrations.CreateGamesAndPositions do
     execute("""
     CREATE TABLE positions (
       game_id BIGINT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-      ply SMALLINT NOT NULL CHECK (ply >= 0),
+      ply SMALLINT NOT NULL,
       zobrist_hash BIGINT NOT NULL,
-      material_key INTEGER NOT NULL CHECK (material_key >= 0 AND material_key <= 524287),
-      material_shard_id INTEGER NOT NULL CHECK (material_shard_id >= 0 AND material_shard_id < 32768),
+      material_key INTEGER NOT NULL,
+      material_shard_id INTEGER NOT NULL,
       inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (game_id, ply, material_shard_id)
     ) PARTITION BY RANGE (material_shard_id)

@@ -5,7 +5,13 @@ defmodule Mix.Tasks.Openings.ImportLichess do
 
   @shortdoc "Imports Lichess PGN games and EPD positions"
 
-  @switches [games_batch_size: :integer, positions_batch_size: :integer, idempotent: :boolean]
+  @switches [
+    games_batch_size: :integer,
+    positions_batch_size: :integer,
+    games_log_every: :integer,
+    positions_log_every: :integer,
+    idempotent: :boolean
+  ]
 
   @requirements ["app.start"]
 
@@ -24,7 +30,7 @@ defmodule Mix.Tasks.Openings.ImportLichess do
           path
 
         _ ->
-          raise "usage: mix openings.import_lichess <path_to_lichess_pgn> [--games-batch-size N] [--positions-batch-size N] [--idempotent]"
+          raise "usage: mix openings.import_lichess <path_to_lichess_pgn> [--games-batch-size N] [--positions-batch-size N] [--games-log-every N] [--positions-log-every N] [--idempotent]"
       end
 
     import_mode = if Keyword.get(opts, :idempotent, false), do: :idempotent, else: :append_only
@@ -36,9 +42,33 @@ defmodule Mix.Tasks.Openings.ImportLichess do
 
     try do
       case Openings.import_lichess_pgn(pgn_path, opts) do
-        {:ok, %{games_inserted: games_inserted, positions_inserted: positions_inserted}} ->
+        {:ok, %{games_inserted: games_inserted, positions_inserted: positions_inserted} = stats} ->
           IO.puts("games inserted: #{games_inserted}")
           IO.puts("positions inserted: #{positions_inserted}")
+
+          if Map.has_key?(stats, :games_phase_ms) do
+            IO.puts(
+              "games phase: #{stats.games_phase_ms} ms (#{format_rate(stats.games_per_sec)} games/s)"
+            )
+
+            IO.puts("games parse/transform: #{stats.games_parse_ms} ms")
+
+            IO.puts(
+              "games db insert: #{stats.games_insert_ms} ms across #{stats.games_insert_batches} batches (avg #{avg_batch_ms(stats.games_insert_ms, stats.games_insert_batches)} ms/batch)"
+            )
+
+            IO.puts(
+              "positions phase: #{stats.positions_phase_ms} ms (#{format_rate(stats.positions_per_sec)} positions/s)"
+            )
+
+            IO.puts("positions parse/hash: #{stats.positions_parse_ms} ms")
+
+            IO.puts(
+              "positions db insert: #{stats.positions_insert_ms} ms across #{stats.positions_insert_batches} batches (avg #{avg_batch_ms(stats.positions_insert_ms, stats.positions_insert_batches)} ms/batch)"
+            )
+
+            IO.puts("importer total: #{stats.total_ms} ms")
+          end
 
         {:error, :unique_violation} ->
           raise "import failed: duplicate data detected in append_only mode. rerun with --idempotent if deduplication is expected"
@@ -65,5 +95,18 @@ defmodule Mix.Tasks.Openings.ImportLichess do
       |> then(&"--#{&1}")
     end)
     |> Enum.join(", ")
+  end
+
+  @spec format_rate(number()) :: String.t()
+  defp format_rate(rate) when is_number(rate),
+    do: :erlang.float_to_binary(rate * 1.0, decimals: 2)
+
+  @spec avg_batch_ms(non_neg_integer(), non_neg_integer()) :: String.t()
+  defp avg_batch_ms(_total_ms, 0), do: "0.00"
+
+  defp avg_batch_ms(total_ms, batches) do
+    total_ms
+    |> Kernel./(batches)
+    |> :erlang.float_to_binary(decimals: 2)
   end
 end
