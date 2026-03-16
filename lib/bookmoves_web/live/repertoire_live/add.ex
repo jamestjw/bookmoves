@@ -1,6 +1,7 @@
 defmodule BookmovesWeb.RepertoireLive.Add do
   use BookmovesWeb, :live_view
 
+  alias Bookmoves.Openings
   alias Bookmoves.Repertoire
 
   @comment_preview_limit 140
@@ -145,6 +146,22 @@ defmodule BookmovesWeb.RepertoireLive.Add do
                                 <% end %>
                               </div>
                             <% end %>
+
+                            <% move_stats = child_move_stats(@child_move_stats_by_id, child.id) %>
+                            <div class="mt-2 text-[0.72rem] leading-5 text-base-content/65">
+                              <%= if @parent_games_reached > 0 do %>
+                                <p>
+                                  Played in {format_percentage(move_stats.move_percentage)} ({move_stats.games_with_move}/{@parent_games_reached} games)
+                                </p>
+                                <p>
+                                  W/D/B {format_percentage(move_stats.white_win_percentage)} / {format_percentage(
+                                    move_stats.draw_percentage
+                                  )} / {format_percentage(move_stats.black_win_percentage)}
+                                </p>
+                              <% else %>
+                                <p>No opening game data for this position yet.</p>
+                              <% end %>
+                            </div>
                           </div>
                         </div>
                         <div class="mt-2 flex items-center gap-4">
@@ -556,6 +573,9 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     children =
       Repertoire.get_children(socket.assigns.current_scope, repertoire.id, position.fen)
 
+    {parent_games_reached, child_move_stats_by_id} =
+      load_child_move_stats(position.fen, children)
+
     moves = Enum.map(position_chain, & &1.san) |> Enum.reject(&is_nil/1)
     move_notation = Repertoire.format_notation_with_numbers(moves)
     current_move_index = length(moves)
@@ -568,12 +588,134 @@ defmodule BookmovesWeb.RepertoireLive.Add do
       current_fen: position.fen,
       parent_fen: position.parent_fen,
       children: children,
+      parent_games_reached: parent_games_reached,
+      child_move_stats_by_id: child_move_stats_by_id,
       position_chain: position_chain,
       current_move_index: current_move_index,
       move_notation: move_notation,
       comment_form: to_form(%{}, as: :comment),
       editing_comment_id: nil
     )
+  end
+
+  @type child_move_stat :: %{
+          games_with_move: non_neg_integer(),
+          move_percentage: float(),
+          white_win_percentage: float(),
+          draw_percentage: float(),
+          black_win_percentage: float()
+        }
+
+  @spec load_child_move_stats(String.t(), [Repertoire.Position.t()]) ::
+          {non_neg_integer(), %{optional(pos_integer()) => child_move_stat()}}
+  defp load_child_move_stats(_parent_fen, []), do: {0, %{}}
+
+  defp load_child_move_stats(parent_fen, children) do
+    {lookup_parent_fen, lookup_child_fens_by_id} =
+      canonical_lookup_fens(parent_fen, children)
+
+    child_fens =
+      lookup_child_fens_by_id
+      |> Map.values()
+      |> Enum.uniq()
+
+    case Openings.move_stats_for_children(lookup_parent_fen, child_fens) do
+      {:ok, %{parent_games_reached: parent_games_reached, by_child_fen: by_child_fen}} ->
+        child_move_stats_by_id =
+          Enum.into(children, %{}, fn child ->
+            lookup_child_fen =
+              Map.get(lookup_child_fens_by_id, child.id, normalize_to_four_field_fen(child.fen))
+
+            {child.id, Map.get(by_child_fen, lookup_child_fen, empty_child_move_stat())}
+          end)
+
+        {parent_games_reached, child_move_stats_by_id}
+
+      {:error, :invalid_fen} ->
+        {0, %{}}
+    end
+  end
+
+  @spec canonical_lookup_fens(String.t(), [Repertoire.Position.t()]) ::
+          {String.t(), %{optional(pos_integer()) => String.t()}}
+  defp canonical_lookup_fens(parent_fen, children) do
+    fallback_parent_fen = normalize_to_four_field_fen(parent_fen)
+
+    fallback_child_fens_by_id =
+      Enum.into(children, %{}, fn child ->
+        {child.id, normalize_to_four_field_fen(child.fen)}
+      end)
+
+    case ChessLogic.new_game(parent_fen) do
+      %ChessLogic.Game{} = game ->
+        canonical_child_fens_by_id =
+          Enum.into(children, %{}, fn child ->
+            canonical_child_fen =
+              case play_san(game, child.san) do
+                {:ok, child_game} ->
+                  child_game.current_position
+                  |> ChessLogic.Position.to_fen()
+                  |> normalize_to_four_field_fen()
+
+                {:error, _reason} ->
+                  Map.get(fallback_child_fens_by_id, child.id)
+              end
+
+            {child.id, canonical_child_fen}
+          end)
+
+        {fallback_parent_fen, canonical_child_fens_by_id}
+
+      _ ->
+        {fallback_parent_fen, fallback_child_fens_by_id}
+    end
+  end
+
+  @spec play_san(term(), String.t() | nil) :: {:ok, term()} | {:error, term()}
+  defp play_san(_game, nil), do: {:error, :invalid_san}
+
+  defp play_san(game, san) when is_binary(san) do
+    ChessLogic.play(game, san)
+  end
+
+  @spec normalize_to_four_field_fen(String.t()) :: String.t()
+  defp normalize_to_four_field_fen(fen) do
+    case String.split(fen, ~r/\s+/, trim: true) do
+      [board, side, castling, _ep_target] ->
+        Enum.join([board, side, castling, "-"], " ")
+
+      [board, side, castling, _ep_target, _halfmove, _fullmove] ->
+        Enum.join([board, side, castling, "-"], " ")
+
+      _ ->
+        fen
+    end
+  end
+
+  @spec child_move_stats(%{optional(pos_integer()) => child_move_stat()}, pos_integer()) ::
+          child_move_stat()
+  defp child_move_stats(child_move_stats_by_id, child_id)
+       when is_map(child_move_stats_by_id) and is_integer(child_id) do
+    Map.get(child_move_stats_by_id, child_id, empty_child_move_stat())
+  end
+
+  @spec empty_child_move_stat() :: child_move_stat()
+  defp empty_child_move_stat do
+    %{
+      games_with_move: 0,
+      move_percentage: 0.0,
+      white_win_percentage: 0.0,
+      draw_percentage: 0.0,
+      black_win_percentage: 0.0
+    }
+  end
+
+  @spec format_percentage(number()) :: String.t()
+  defp format_percentage(value) when is_number(value) do
+    value
+    |> Kernel.*(1.0)
+    |> :erlang.float_to_binary(decimals: 1)
+    |> then(&"#{&1}%")
   end
 
   @spec next_move_label(Repertoire.Position.persisted_t(), non_neg_integer()) :: String.t()

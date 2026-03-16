@@ -36,8 +36,16 @@ defmodule Bookmoves.DataCase do
   Sets up the sandbox based on the test tags.
   """
   def setup_sandbox(tags) do
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Bookmoves.Repo, shared: not tags[:async])
-    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    repo_owner_pid =
+      Ecto.Adapters.SQL.Sandbox.start_owner!(Bookmoves.Repo, shared: not tags[:async])
+
+    games_repo_owner_pid =
+      Ecto.Adapters.SQL.Sandbox.start_owner!(Bookmoves.GamesRepo, shared: not tags[:async])
+
+    on_exit(fn ->
+      Ecto.Adapters.SQL.Sandbox.stop_owner(games_repo_owner_pid)
+      Ecto.Adapters.SQL.Sandbox.stop_owner(repo_owner_pid)
+    end)
   end
 
   @doc """
