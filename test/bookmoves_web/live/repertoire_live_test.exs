@@ -628,7 +628,7 @@ defmodule BookmovesWeb.RepertoireLiveTest do
       assert Repertoire.get_position_by_fen(
                scope,
                repertoire.id,
-               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+               "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
              )
 
       assert has_element?(view, "#pgn-import-form")

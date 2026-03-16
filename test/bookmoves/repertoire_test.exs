@@ -277,7 +277,7 @@ defmodule Bookmoves.RepertoireTest do
       assert Repertoire.get_position_by_fen(
                scope,
                repertoire.id,
-               "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2"
+               "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
              )
     end
 

@@ -10,6 +10,7 @@ defmodule Bookmoves.Repertoire do
   alias Bookmoves.Repertoire.PgnImport
   alias Bookmoves.Repertoire.Repertoire, as: UserRepertoire
   alias Bookmoves.Repo
+  alias ChessLogic.Move, as: ChessMove
   alias ChessLogic.Position, as: ChessPosition
 
   @existing_key_query_chunk_size 200
@@ -270,7 +271,11 @@ defmodule Bookmoves.Repertoire do
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position(%Scope{} = scope, repertoire_id, attrs) do
     {user_id, repertoire_id} = scoped_ids(scope, repertoire_id)
-    attrs = maybe_inherit_parent_training_enabled(scope, repertoire_id, attrs)
+
+    attrs =
+      attrs
+      |> normalize_position_fens()
+      |> then(&maybe_inherit_parent_training_enabled(scope, repertoire_id, &1))
 
     with :ok <- validate_move_transition(attrs) do
       %Position{}
@@ -290,6 +295,8 @@ defmodule Bookmoves.Repertoire do
   @spec create_position_if_not_exists(Scope.t(), pos_integer(), Position.attrs()) ::
           {:ok, Position.persisted_t()} | {:error, Ecto.Changeset.t()}
   def create_position_if_not_exists(%Scope{} = scope, repertoire_id, attrs) do
+    attrs = normalize_position_fens(attrs)
+
     case get_position_by_move_key(
            scope,
            repertoire_id,
@@ -303,6 +310,61 @@ defmodule Bookmoves.Repertoire do
       existing ->
         {:ok, existing}
     end
+  end
+
+  @spec normalize_position_fens(Position.attrs()) :: Position.attrs()
+  defp normalize_position_fens(attrs) when is_map(attrs) do
+    attrs
+    |> update_fen_field(:parent_fen)
+    |> update_fen_field(:fen)
+  end
+
+  @spec update_fen_field(Position.attrs(), :parent_fen | :fen) :: Position.attrs()
+  defp update_fen_field(attrs, key) do
+    case Map.get(attrs, key) do
+      fen when is_binary(fen) -> Map.put(attrs, key, canonicalize_fen_ep_square(fen))
+      _ -> attrs
+    end
+  end
+
+  @spec canonicalize_fen_ep_square(String.t()) :: String.t()
+  defp canonicalize_fen_ep_square(fen) when is_binary(fen) do
+    case String.split(fen, " ", trim: true) do
+      [board, side, castling, ep_target, halfmove, fullmove] ->
+        if keep_ep_square?(fen, ep_target) do
+          Enum.join([board, side, castling, ep_target, halfmove, fullmove], " ")
+        else
+          Enum.join([board, side, castling, "-", halfmove, fullmove], " ")
+        end
+
+      _ ->
+        fen
+    end
+  end
+
+  @spec keep_ep_square?(String.t(), String.t()) :: boolean()
+  defp keep_ep_square?(_fen, "-"), do: false
+
+  defp keep_ep_square?(fen, _ep_target) do
+    with %ChessPosition{en_passant_square: en_passant_square} = position <-
+           ChessPosition.from_fen(fen),
+         ep_square when is_integer(ep_square) <- en_passant_square do
+      position
+      |> ChessPosition.all_possible_moves()
+      |> Enum.any?(&en_passant_capture_move?(&1, ep_square))
+    else
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  @spec en_passant_capture_move?(ChessMove.t(), integer()) :: boolean()
+  defp en_passant_capture_move?(
+         %ChessMove{from: from, to: to, taken: taken},
+         ep_square
+       ) do
+    from.type == :pawn and taken != false and taken.type == :pawn and to.square == ep_square
   end
 
   @spec get_position_by_move_key(
@@ -532,7 +594,9 @@ defmodule Bookmoves.Repertoire do
           | {:error, Ecto.Changeset.t() | :empty_pgn | :invalid_pgn | :unsupported_start_position}
   def import_pgn(%Scope{} = scope, repertoire_id, pgn_text) when is_binary(pgn_text) do
     with {:ok, attrs_list} <- PgnImport.parse_to_attrs(pgn_text) do
-      import_positions(scope, repertoire_id, attrs_list)
+      attrs_list
+      |> Enum.map(&normalize_position_fens/1)
+      |> then(&import_positions(scope, repertoire_id, &1))
     end
   end
 
