@@ -149,17 +149,19 @@ defmodule BookmovesWeb.RepertoireLive.Add do
 
                             <% move_stats = child_move_stats(@child_move_stats_by_id, child.id) %>
                             <div class="mt-2 text-[0.72rem] leading-5 text-base-content/65">
-                              <%= if @parent_games_reached > 0 do %>
-                                <p>
-                                  Played in {format_percentage(move_stats.move_percentage)} ({move_stats.games_with_move}/{@parent_games_reached} games)
-                                </p>
-                                <p>
-                                  W/D/B {format_percentage(move_stats.white_win_percentage)} / {format_percentage(
-                                    move_stats.draw_percentage
-                                  )} / {format_percentage(move_stats.black_win_percentage)}
-                                </p>
-                              <% else %>
-                                <p>No opening game data for this position yet.</p>
+                              <%= if not @child_move_stats_loading do %>
+                                <%= if @parent_games_reached > 0 do %>
+                                  <p>
+                                    Played in {format_percentage(move_stats.move_percentage)} ({move_stats.games_with_move}/{@parent_games_reached} games)
+                                  </p>
+                                  <p>
+                                    W/D/B {format_percentage(move_stats.white_win_percentage)} / {format_percentage(
+                                      move_stats.draw_percentage
+                                    )} / {format_percentage(move_stats.black_win_percentage)}
+                                  </p>
+                                <% else %>
+                                  <p>No opening game data for this position yet.</p>
+                                <% end %>
                               <% end %>
                             </div>
                           </div>
@@ -516,6 +518,33 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     end
   end
 
+  @impl true
+  def handle_async(
+        :child_move_stats,
+        {:ok,
+         %{
+           request_key: request_key,
+           parent_games_reached: parent_games_reached,
+           child_move_stats_by_id: child_move_stats_by_id
+         }},
+        socket
+      ) do
+    if socket.assigns.child_move_stats_request_key == request_key do
+      {:noreply,
+       assign(socket,
+         parent_games_reached: parent_games_reached,
+         child_move_stats_by_id: child_move_stats_by_id,
+         child_move_stats_loading: false
+       )}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_async(:child_move_stats, {:exit, _reason}, socket) do
+    {:noreply, assign(socket, child_move_stats_loading: false)}
+  end
+
   @spec update_child_comment_in_assigns(Phoenix.LiveView.Socket.t(), pos_integer(), String.t()) ::
           Phoenix.LiveView.Socket.t()
   defp update_child_comment_in_assigns(socket, id, comment) do
@@ -573,29 +602,83 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     children =
       Repertoire.get_children(socket.assigns.current_scope, repertoire.id, position.fen)
 
-    {parent_games_reached, child_move_stats_by_id} =
-      load_child_move_stats(position.fen, children)
+    child_move_stats_request_key = child_move_stats_request_key(position.fen, children)
 
     moves = Enum.map(position_chain, & &1.san) |> Enum.reject(&is_nil/1)
     move_notation = Repertoire.format_notation_with_numbers(moves)
     current_move_index = length(moves)
 
-    assign(socket,
-      side: side,
-      repertoire: repertoire,
-      current_position_id: position.id,
-      current_position: position,
-      current_fen: position.fen,
-      parent_fen: position.parent_fen,
-      children: children,
-      parent_games_reached: parent_games_reached,
-      child_move_stats_by_id: child_move_stats_by_id,
-      position_chain: position_chain,
-      current_move_index: current_move_index,
-      move_notation: move_notation,
-      comment_form: to_form(%{}, as: :comment),
-      editing_comment_id: nil
+    socket =
+      assign(socket,
+        side: side,
+        repertoire: repertoire,
+        current_position_id: position.id,
+        current_position: position,
+        current_fen: position.fen,
+        parent_fen: position.parent_fen,
+        children: children,
+        parent_games_reached: 0,
+        child_move_stats_by_id: %{},
+        child_move_stats_loading: children != [],
+        child_move_stats_request_key: child_move_stats_request_key,
+        position_chain: position_chain,
+        current_move_index: current_move_index,
+        move_notation: move_notation,
+        comment_form: to_form(%{}, as: :comment),
+        editing_comment_id: nil
+      )
+
+    maybe_start_child_move_stats_task(
+      socket,
+      position.fen,
+      children,
+      child_move_stats_request_key
     )
+  end
+
+  @spec maybe_start_child_move_stats_task(
+          Phoenix.LiveView.Socket.t(),
+          String.t(),
+          [Repertoire.Position.t()],
+          String.t()
+        ) :: Phoenix.LiveView.Socket.t()
+  defp maybe_start_child_move_stats_task(socket, _parent_fen, [], _request_key),
+    do: assign(socket, child_move_stats_loading: false)
+
+  defp maybe_start_child_move_stats_task(socket, parent_fen, children, request_key) do
+    cond do
+      Mix.env() == :test ->
+        {parent_games_reached, child_move_stats_by_id} =
+          load_child_move_stats(parent_fen, children)
+
+        assign(socket,
+          parent_games_reached: parent_games_reached,
+          child_move_stats_by_id: child_move_stats_by_id,
+          child_move_stats_loading: false,
+          child_move_stats_request_key: request_key
+        )
+
+      connected?(socket) ->
+        start_async(socket, :child_move_stats, fn ->
+          {parent_games_reached, child_move_stats_by_id} =
+            load_child_move_stats(parent_fen, children)
+
+          %{
+            request_key: request_key,
+            parent_games_reached: parent_games_reached,
+            child_move_stats_by_id: child_move_stats_by_id
+          }
+        end)
+
+      true ->
+        socket
+    end
+  end
+
+  @spec child_move_stats_request_key(String.t(), [Repertoire.Position.t()]) :: String.t()
+  defp child_move_stats_request_key(parent_fen, children) do
+    child_ids = children |> Enum.map(&Integer.to_string(&1.id)) |> Enum.join(",")
+    "#{normalize_to_four_field_fen(parent_fen)}|#{child_ids}"
   end
 
   @type child_move_stat :: %{
