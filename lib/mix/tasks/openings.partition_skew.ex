@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Openings.PartitionSkew do
 
   alias Bookmoves.GamesRepo
 
-  @shortdoc "Reports positions partition skew"
+  @shortdoc "Reports positions storage skew"
 
   @switches [limit: :integer, include_empty: :boolean, order_by: :string]
   @requirements ["app.start"]
@@ -85,6 +85,36 @@ defmodule Mix.Tasks.Openings.PartitionSkew do
 
   @spec fetch_partition_stats(:rows | :bytes | :name) :: [partition_stat()]
   defp fetch_partition_stats(order_by) do
+    if positions_partitioned?() do
+      fetch_partition_stats_partitioned(order_by)
+    else
+      fetch_partition_stats_unpartitioned()
+    end
+  end
+
+  @spec positions_partitioned?() :: boolean()
+  defp positions_partitioned? do
+    query = """
+    SELECT EXISTS (
+      SELECT 1
+      FROM pg_inherits
+      WHERE inhparent = 'positions'::regclass
+    )
+    """
+
+    GamesRepo
+    |> Ecto.Adapters.SQL.query!(query, [], timeout: :infinity)
+    |> Map.fetch!(:rows)
+    |> case do
+      [[true]] -> true
+      _ -> false
+    end
+  rescue
+    _error in Postgrex.Error -> false
+  end
+
+  @spec fetch_partition_stats_partitioned(:rows | :bytes | :name) :: [partition_stat()]
+  defp fetch_partition_stats_partitioned(order_by) do
     query = """
     WITH partition_list AS (
       SELECT
@@ -105,6 +135,31 @@ defmodule Mix.Tasks.Openings.PartitionSkew do
     FROM partition_list p
     LEFT JOIN partition_rows r ON r.partition_oid = p.partition_oid
     ORDER BY #{order_by_sql(order_by)}
+    """
+
+    GamesRepo
+    |> Ecto.Adapters.SQL.query!(query, [], timeout: :infinity)
+    |> Map.fetch!(:rows)
+    |> Enum.map(&to_partition_stat/1)
+  rescue
+    error in Postgrex.Error ->
+      case error do
+        %Postgrex.Error{postgres: %{code: :undefined_table}} ->
+          raise "positions table is missing in GamesRepo. run migrations first"
+
+        _other ->
+          reraise error, __STACKTRACE__
+      end
+  end
+
+  @spec fetch_partition_stats_unpartitioned() :: [partition_stat()]
+  defp fetch_partition_stats_unpartitioned do
+    query = """
+    SELECT
+      'positions'::text AS partition_name,
+      count(*)::bigint AS row_count,
+      pg_total_relation_size('positions'::regclass)::bigint AS total_bytes
+    FROM positions
     """
 
     GamesRepo
@@ -184,7 +239,7 @@ defmodule Mix.Tasks.Openings.PartitionSkew do
           :rows | :bytes | :name
         ) :: :ok
   defp print_report(shown_stats, summary, filtered_stats, include_empty?, order_by) do
-    IO.puts("positions partition skew")
+    IO.puts("positions storage skew")
 
     IO.puts(
       "order_by=#{order_by} include_empty=#{include_empty?} shown=#{length(shown_stats)}/#{length(filtered_stats)}"

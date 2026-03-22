@@ -3,7 +3,6 @@ defmodule Bookmoves.Openings.MoveStatsTest do
 
   alias Bookmoves.GamesRepo
   alias Bookmoves.Openings
-  alias Bookmoves.Openings.MaterialShard
   alias Bookmoves.Openings.Zobrist
 
   @root_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -11,12 +10,16 @@ defmodule Bookmoves.Openings.MoveStatsTest do
   @d4_fen "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1"
 
   setup do
-    insert_games_fixture_data(positions_have_material_key?())
+    insert_games_fixture_data()
     :ok
   end
 
   test "computes move percentages and outcome percentages by distinct game" do
-    assert {:ok, stats} = Openings.move_stats_for_children(@root_fen, [@e4_fen, @d4_fen])
+    assert {:ok, stats} =
+             Openings.move_stats_for_children(@root_fen, [
+               %{fen: @e4_fen, san: "e4"},
+               %{fen: @d4_fen, san: "d4"}
+             ])
 
     assert stats.parent_games_reached == 5
 
@@ -43,11 +46,12 @@ defmodule Bookmoves.Openings.MoveStatsTest do
   end
 
   test "returns invalid_fen error for malformed fen" do
-    assert {:error, :invalid_fen} = Openings.move_stats_for_children("invalid", [@e4_fen])
+    assert {:error, :invalid_fen} =
+             Openings.move_stats_for_children("invalid", [%{fen: @e4_fen, san: "e4"}])
   end
 
-  @spec insert_games_fixture_data(boolean()) :: {non_neg_integer(), nil | [term()]}
-  defp insert_games_fixture_data(include_material_key?) do
+  @spec insert_games_fixture_data() :: {non_neg_integer(), nil | [term()]}
+  defp insert_games_fixture_data do
     game_rows = [
       %{id: 101, lichess_id: "mvstats001", moves_pgn: "1. e4", outcome: 1, time_control: 3},
       %{id: 102, lichess_id: "mvstats002", moves_pgn: "1. e4", outcome: 3, time_control: 3},
@@ -56,69 +60,51 @@ defmodule Bookmoves.Openings.MoveStatsTest do
       %{id: 105, lichess_id: "mvstats005", moves_pgn: "1. e4", outcome: 1, time_control: 3}
     ]
 
+    normalized_root_fen = normalize_to_four_field_fen(@root_fen)
+    {:ok, root_hash} = Zobrist.hash_fen(normalized_root_fen)
+
     position_rows = [
-      position_row(101, 0, @root_fen, include_material_key?),
-      position_row(101, 1, @e4_fen, include_material_key?),
-      position_row(102, 0, @root_fen, include_material_key?),
-      position_row(102, 1, @e4_fen, include_material_key?),
-      position_row(103, 0, @root_fen, include_material_key?),
-      position_row(103, 1, @d4_fen, include_material_key?),
-      position_row(104, 0, @root_fen, include_material_key?),
-      position_row(105, 0, @root_fen, include_material_key?),
-      position_row(105, 1, @e4_fen, include_material_key?),
-      position_row(105, 2, @root_fen, include_material_key?),
-      position_row(105, 3, @e4_fen, include_material_key?)
+      %{
+        zobrist_hash: root_hash,
+        san: "e4",
+        white_wins: 2,
+        black_wins: 0,
+        draws: 1
+      },
+      %{
+        zobrist_hash: root_hash,
+        san: "d4",
+        white_wins: 0,
+        black_wins: 1,
+        draws: 0
+      },
+      %{
+        zobrist_hash: root_hash,
+        san: "c4",
+        white_wins: 0,
+        black_wins: 1,
+        draws: 0
+      }
+    ]
+
+    position_game_rows = [
+      %{zobrist_hash: root_hash, san: "e4", game_id: 101},
+      %{zobrist_hash: root_hash, san: "e4", game_id: 102},
+      %{zobrist_hash: root_hash, san: "e4", game_id: 105},
+      %{zobrist_hash: root_hash, san: "d4", game_id: 103},
+      %{zobrist_hash: root_hash, san: "c4", game_id: 104}
     ]
 
     GamesRepo.insert_all("games", game_rows)
     GamesRepo.insert_all("positions", position_rows)
-  end
-
-  @spec position_row(integer(), non_neg_integer(), String.t(), boolean()) :: map()
-  defp position_row(game_id, ply, fen, include_material_key?) do
-    normalized_fen = normalize_to_four_field_fen(fen)
-    {:ok, {material_key, material_shard_id}} = MaterialShard.from_fen(normalized_fen)
-    {:ok, zobrist_hash} = Zobrist.hash_fen(normalized_fen)
-
-    row = %{
-      game_id: game_id,
-      ply: ply,
-      material_shard_id: material_shard_id,
-      zobrist_hash: zobrist_hash
-    }
-
-    if include_material_key? do
-      Map.put(row, :material_key, material_key)
-    else
-      row
-    end
-  end
-
-  @spec positions_have_material_key?() :: boolean()
-  defp positions_have_material_key? do
-    query = """
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_name = 'positions'
-        AND column_name = 'material_key'
-    )
-    """
-
-    GamesRepo
-    |> Ecto.Adapters.SQL.query!(query, [], timeout: :infinity)
-    |> Map.fetch!(:rows)
-    |> case do
-      [[true]] -> true
-      _ -> false
-    end
+    GamesRepo.insert_all("position_games", position_game_rows)
   end
 
   @spec normalize_to_four_field_fen(String.t()) :: String.t()
   defp normalize_to_four_field_fen(fen) do
     case String.split(fen, ~r/\s+/, trim: true) do
-      [board, side, castling, _ep_target | _rest] ->
-        Enum.join([board, side, castling, "-"], " ")
+      [board, side, castling, ep_target | _rest] ->
+        Enum.join([board, side, castling, ep_target], " ")
 
       _ ->
         fen

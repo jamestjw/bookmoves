@@ -55,7 +55,7 @@ defmodule Bookmoves.Openings do
     FenLookup.lookup(fen, opts)
   end
 
-  @spec move_stats_for_children(String.t(), [String.t()]) ::
+  @spec move_stats_for_children(String.t(), [map()]) ::
           {:ok, move_stats_result()} | {:error, :invalid_fen}
   def move_stats_for_children(parent_fen, child_fens)
       when is_binary(parent_fen) and is_list(child_fens) do

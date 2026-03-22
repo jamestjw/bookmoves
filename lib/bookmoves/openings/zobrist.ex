@@ -4,33 +4,43 @@ defmodule Bookmoves.Openings.Zobrist do
   import Bitwise
 
   @mask_64 0xFFFF_FFFF_FFFF_FFFF
-  @signed_boundary 0x8000_0000_0000_0000
-  @full_range 0x1_0000_0000_0000_0000
   @cache_key {__MODULE__, :key_tables}
 
   @type square_index :: 0..63
   @type piece_symbol :: ?P | ?N | ?B | ?R | ?Q | ?K | ?p | ?n | ?b | ?r | ?q | ?k
 
-  @spec hash_fen(String.t()) :: {:ok, integer()} | {:error, :invalid_fen}
+  @type hash128 :: <<_::128>>
+
+  @spec hash_fen(String.t()) :: {:ok, hash128()} | {:error, :invalid_fen}
   def hash_fen(fen) when is_binary(fen) do
     with {:ok, board, side, castling, ep_target} <- parse_fen(fen),
          {:ok, pieces} <- parse_pieces(board) do
-      {piece_keys, castling_keys, ep_file_keys, side_key} = key_tables()
+      {piece_keys_lo, piece_keys_hi, castling_keys_lo, castling_keys_hi, ep_file_keys_lo,
+       ep_file_keys_hi, side_key_lo, side_key_hi} = key_tables()
 
-      unsigned_hash =
+      unsigned_hash_lo =
         pieces
         |> Enum.reduce(0, fn {piece, square}, acc ->
-          bxor(acc, piece_key(piece, square, piece_keys)) &&& @mask_64
+          bxor(acc, piece_key(piece, square, piece_keys_lo)) &&& @mask_64
         end)
-        |> maybe_xor_side(side, side_key)
-        |> maybe_xor_castling(castling, castling_keys)
-        |> maybe_xor_ep(ep_target, ep_file_keys)
+        |> maybe_xor_side(side, side_key_lo)
+        |> maybe_xor_castling(castling, castling_keys_lo)
+        |> maybe_xor_ep(ep_target, ep_file_keys_lo)
 
-      {:ok, to_signed(unsigned_hash)}
+      unsigned_hash_hi =
+        pieces
+        |> Enum.reduce(0, fn {piece, square}, acc ->
+          bxor(acc, piece_key(piece, square, piece_keys_hi)) &&& @mask_64
+        end)
+        |> maybe_xor_side(side, side_key_hi)
+        |> maybe_xor_castling(castling, castling_keys_hi)
+        |> maybe_xor_ep(ep_target, ep_file_keys_hi)
+
+      {:ok, to_binary_128(unsigned_hash_hi, unsigned_hash_lo)}
     end
   end
 
-  @spec hash_fen!(String.t()) :: integer()
+  @spec hash_fen!(String.t()) :: hash128()
   def hash_fen!(fen) when is_binary(fen) do
     case hash_fen(fen) do
       {:ok, hash} -> hash
@@ -145,32 +155,55 @@ defmodule Bookmoves.Openings.Zobrist do
   defp piece_index(?q), do: 10
   defp piece_index(?k), do: 11
 
-  @spec to_signed(non_neg_integer()) :: integer()
-  defp to_signed(unsigned) when unsigned >= @signed_boundary, do: unsigned - @full_range
-  defp to_signed(unsigned), do: unsigned
+  @spec to_binary_128(non_neg_integer(), non_neg_integer()) :: hash128()
+  defp to_binary_128(unsigned_hi_64, unsigned_lo_64) do
+    <<unsigned_hi_64::unsigned-big-integer-size(64),
+      unsigned_lo_64::unsigned-big-integer-size(64)>>
+  end
 
-  @spec key_tables() :: {tuple(), tuple(), tuple(), non_neg_integer()}
+  @spec key_tables() ::
+          {tuple(), tuple(), tuple(), tuple(), tuple(), tuple(), non_neg_integer(),
+           non_neg_integer()}
   defp key_tables do
     case :persistent_term.get(@cache_key, nil) do
       nil ->
-        piece_keys =
+        piece_keys_lo =
           0..767
           |> Enum.map(&splitmix64(&1 + 1))
           |> List.to_tuple()
 
-        castling_keys =
+        piece_keys_hi =
+          0..767
+          |> Enum.map(&splitmix64(&1 + 10_001))
+          |> List.to_tuple()
+
+        castling_keys_lo =
           768..771
           |> Enum.map(&splitmix64(&1 + 1))
           |> List.to_tuple()
 
-        ep_file_keys =
+        castling_keys_hi =
+          768..771
+          |> Enum.map(&splitmix64(&1 + 10_001))
+          |> List.to_tuple()
+
+        ep_file_keys_lo =
           772..779
           |> Enum.map(&splitmix64(&1 + 1))
           |> List.to_tuple()
 
-        side_key = splitmix64(781)
+        ep_file_keys_hi =
+          772..779
+          |> Enum.map(&splitmix64(&1 + 10_001))
+          |> List.to_tuple()
 
-        tables = {piece_keys, castling_keys, ep_file_keys, side_key}
+        side_key_lo = splitmix64(781)
+        side_key_hi = splitmix64(10_781)
+
+        tables =
+          {piece_keys_lo, piece_keys_hi, castling_keys_lo, castling_keys_hi, ep_file_keys_lo,
+           ep_file_keys_hi, side_key_lo, side_key_hi}
+
         :persistent_term.put(@cache_key, tables)
         tables
 

@@ -2,7 +2,6 @@ defmodule Bookmoves.Openings.FenLookup do
   @moduledoc false
 
   alias Bookmoves.GamesRepo
-  alias Bookmoves.Openings.MaterialShard
   alias Bookmoves.Openings.Zobrist
 
   @default_limit 200
@@ -21,10 +20,9 @@ defmodule Bookmoves.Openings.FenLookup do
     started_at = System.monotonic_time(:microsecond)
 
     with {:ok, normalized_fen} <- normalize_fen(fen),
-         {:ok, {_material_key, material_shard_id}} <- MaterialShard.from_fen(normalized_fen),
          {:ok, zobrist_hash} <- Zobrist.hash_fen(normalized_fen) do
       query_started_at = System.monotonic_time(:microsecond)
-      rows = fetch_lichess_ids(material_shard_id, zobrist_hash, limit)
+      rows = fetch_lichess_ids(zobrist_hash, limit)
       query_ms = duration_ms(query_started_at)
       elapsed_ms = duration_ms(started_at)
 
@@ -61,18 +59,17 @@ defmodule Bookmoves.Openings.FenLookup do
     end
   end
 
-  @spec fetch_lichess_ids(non_neg_integer(), integer(), pos_integer()) :: [[String.t()]]
-  defp fetch_lichess_ids(material_shard_id, zobrist_hash, limit) do
+  @spec fetch_lichess_ids(Zobrist.hash128(), pos_integer()) :: [[String.t()]]
+  defp fetch_lichess_ids(zobrist_hash, limit) do
     query = """
     SELECT DISTINCT g.lichess_id
-    FROM positions p
-    INNER JOIN games g ON g.id = p.game_id
-    WHERE p.material_shard_id = $1
-      AND p.zobrist_hash = $2
-    LIMIT $3
+    FROM position_games pg
+    INNER JOIN games g ON g.id = pg.game_id
+    WHERE pg.zobrist_hash = $1
+    LIMIT $2
     """
 
-    Ecto.Adapters.SQL.query!(GamesRepo, query, [material_shard_id, zobrist_hash, limit])
+    Ecto.Adapters.SQL.query!(GamesRepo, query, [zobrist_hash, limit])
     |> Map.fetch!(:rows)
   end
 

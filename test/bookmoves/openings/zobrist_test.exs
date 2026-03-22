@@ -3,16 +3,18 @@ defmodule Bookmoves.Openings.ZobristTest do
 
   alias Bookmoves.Openings.Zobrist
 
-  test "hash_fen/1 returns deterministic 64-bit signed integer" do
+  test "hash_fen/1 returns deterministic 128-bit binary" do
     fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
 
     assert {:ok, hash1} = Zobrist.hash_fen(fen)
     assert {:ok, hash2} = Zobrist.hash_fen(fen)
     assert hash1 == hash2
 
-    assert is_integer(hash1)
-    assert hash1 >= -9_223_372_036_854_775_808
-    assert hash1 <= 9_223_372_036_854_775_807
+    assert is_binary(hash1)
+    assert byte_size(hash1) == 16
+
+    <<upper::unsigned-big-integer-size(64), _lower::unsigned-big-integer-size(64)>> = hash1
+    refute upper == 0
   end
 
   test "hash changes with side to move" do

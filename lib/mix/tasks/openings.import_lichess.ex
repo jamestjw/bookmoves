@@ -2,15 +2,16 @@ defmodule Mix.Tasks.Openings.ImportLichess do
   use Mix.Task
 
   alias Bookmoves.Openings
+  require Logger
 
   @shortdoc "Imports Lichess PGN games and EPD positions"
 
   @switches [
     games_batch_size: :integer,
     positions_batch_size: :integer,
+    positions_aggregate_limit: :integer,
     games_log_every: :integer,
-    positions_log_every: :integer,
-    idempotent: :boolean
+    positions_log_every: :integer
   ]
 
   @requirements ["app.start"]
@@ -30,14 +31,16 @@ defmodule Mix.Tasks.Openings.ImportLichess do
           path
 
         _ ->
-          raise "usage: mix openings.import_lichess <path_to_lichess_pgn> [--games-batch-size N] [--positions-batch-size N] [--games-log-every N] [--positions-log-every N] [--idempotent]"
+          raise "usage: mix openings.import_lichess <path_to_lichess_pgn> [--games-batch-size N] [--positions-batch-size N] [--positions-aggregate-limit N] [--games-log-every N] [--positions-log-every N]"
       end
 
-    import_mode = if Keyword.get(opts, :idempotent, false), do: :idempotent, else: :append_only
     started_at = DateTime.utc_now()
     started_ms = System.monotonic_time(:millisecond)
+    previous_logger_level = Logger.level()
 
-    IO.puts("import mode: #{import_mode}")
+    Logger.configure(level: :info)
+
+    IO.puts("import mode: append_only")
     IO.puts("started at: #{DateTime.to_iso8601(started_at)}")
 
     try do
@@ -72,7 +75,7 @@ defmodule Mix.Tasks.Openings.ImportLichess do
           IO.puts("importer total: #{stats.total_ms} ms")
 
         {:error, :unique_violation} ->
-          raise "import failed: duplicate data detected in append_only mode. rerun with --idempotent if deduplication is expected"
+          raise "import failed: duplicate data detected in append_only mode"
 
         {:error, reason} ->
           raise "import failed: #{inspect(reason)}"
@@ -83,6 +86,7 @@ defmodule Mix.Tasks.Openings.ImportLichess do
 
       IO.puts("ended at: #{DateTime.to_iso8601(ended_at)}")
       IO.puts("elapsed: #{elapsed_ms} ms")
+      Logger.configure(level: previous_logger_level)
     end
   end
 

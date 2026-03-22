@@ -3,7 +3,6 @@ defmodule Mix.Tasks.Openings.LookupFen do
 
   alias Bookmoves.GamesRepo
   alias Bookmoves.Openings
-  alias Bookmoves.Openings.MaterialShard
   alias Bookmoves.Openings.Zobrist
   alias ChessLogic.Position, as: ChessPosition
 
@@ -15,9 +14,14 @@ defmodule Mix.Tasks.Openings.LookupFen do
 
   @type candidate_row :: %{
           game_id: integer(),
-          ply: non_neg_integer(),
           lichess_id: String.t(),
           moves_pgn: String.t()
+        }
+
+  @type verified_candidate_row :: %{
+          game_id: integer(),
+          lichess_id: String.t(),
+          plys: [non_neg_integer()]
         }
 
   @impl Mix.Task
@@ -40,7 +44,7 @@ defmodule Mix.Tasks.Openings.LookupFen do
     case Openings.lookup_fen(fen, opts) do
       {:ok, %{normalized_fen: normalized_fen, match_count: match_count, urls: urls} = stats} ->
         IO.puts("normalized fen: #{normalized_fen}")
-        IO.puts("distinct hash/material game matches: #{match_count}")
+        IO.puts("distinct hash game matches: #{match_count}")
 
         if verify? do
           verify_started_ms = System.monotonic_time(:millisecond)
@@ -54,8 +58,9 @@ defmodule Mix.Tasks.Openings.LookupFen do
             IO.puts("no verified matches after replay (likely hash collision candidates)")
           end
 
-          Enum.each(verified_matches, fn %{lichess_id: lichess_id, ply: ply} ->
-            IO.puts("https://lichess.org/#{lichess_id} (ply #{ply})")
+          Enum.each(verified_matches, fn %{lichess_id: lichess_id, plys: plys} ->
+            plys_text = plys |> Enum.map_join(",", &Integer.to_string/1)
+            IO.puts("https://lichess.org/#{lichess_id} (ply #{plys_text})")
           end)
 
           IO.puts("verification time: #{verify_ms} ms")
@@ -76,14 +81,13 @@ defmodule Mix.Tasks.Openings.LookupFen do
   defp verify_candidates(normalized_fen, opts) do
     limit = normalize_limit(Keyword.get(opts, :limit, @default_limit))
 
-    with {:ok, {_material_key, material_shard_id}} <- MaterialShard.from_fen(normalized_fen),
-         {:ok, zobrist_hash} <- Zobrist.hash_fen(normalized_fen) do
-      candidates = fetch_candidate_rows(material_shard_id, zobrist_hash, limit)
+    with {:ok, zobrist_hash} <- Zobrist.hash_fen(normalized_fen) do
+      candidates = fetch_candidate_rows(zobrist_hash, limit)
 
       verified =
         candidates
         |> verify_candidate_rows(normalized_fen)
-        |> Enum.sort_by(fn row -> {row.lichess_id, row.ply} end)
+        |> Enum.sort_by(fn row -> {row.lichess_id, List.first(row.plys) || 0} end)
 
       {verified, length(candidates)}
     else
@@ -95,32 +99,30 @@ defmodule Mix.Tasks.Openings.LookupFen do
   defp normalize_limit(limit) when is_integer(limit) and limit > 0, do: limit
   defp normalize_limit(_limit), do: @default_limit
 
-  @spec fetch_candidate_rows(non_neg_integer(), integer(), pos_integer()) :: [candidate_row()]
-  defp fetch_candidate_rows(material_shard_id, zobrist_hash, limit) do
+  @spec fetch_candidate_rows(Zobrist.hash128(), pos_integer()) :: [candidate_row()]
+  defp fetch_candidate_rows(zobrist_hash, limit) do
     query = """
-    SELECT p.game_id, p.ply, g.lichess_id, g.moves_pgn
-    FROM positions p
-    INNER JOIN games g ON g.id = p.game_id
-    WHERE p.material_shard_id = $1
-      AND p.zobrist_hash = $2
-    ORDER BY p.ply ASC, g.lichess_id ASC
-    LIMIT $3
+    SELECT DISTINCT g.id, g.lichess_id, g.moves_pgn
+    FROM position_games pg
+    INNER JOIN games g ON g.id = pg.game_id
+    WHERE pg.zobrist_hash = $1
+    ORDER BY g.lichess_id ASC
+    LIMIT $2
     """
 
     GamesRepo
-    |> Ecto.Adapters.SQL.query!(query, [material_shard_id, zobrist_hash, limit])
+    |> Ecto.Adapters.SQL.query!(query, [zobrist_hash, limit])
     |> Map.fetch!(:rows)
-    |> Enum.map(fn [game_id, ply, lichess_id, moves_pgn] ->
+    |> Enum.map(fn [game_id, lichess_id, moves_pgn] ->
       %{
         game_id: game_id,
-        ply: ply,
         lichess_id: lichess_id,
         moves_pgn: moves_pgn
       }
     end)
   end
 
-  @spec verify_candidate_rows([candidate_row()], String.t()) :: [candidate_row()]
+  @spec verify_candidate_rows([candidate_row()], String.t()) :: [verified_candidate_row()]
   defp verify_candidate_rows(candidates, normalized_fen) do
     {verified, _cache} =
       Enum.reduce(candidates, {[], %{}}, fn candidate, {acc, cache} ->
@@ -128,10 +130,22 @@ defmodule Mix.Tasks.Openings.LookupFen do
 
         case fen_by_ply_result do
           {:ok, fen_by_ply} ->
-            if Map.get(fen_by_ply, candidate.ply) == normalized_fen do
-              {[candidate | acc], cache}
-            else
+            matching_plys =
+              fen_by_ply
+              |> Enum.filter(fn {_ply, fen} -> fen == normalized_fen end)
+              |> Enum.map(fn {ply, _fen} -> ply end)
+
+            if matching_plys == [] do
               {acc, cache}
+            else
+              {[
+                 %{
+                   game_id: candidate.game_id,
+                   lichess_id: candidate.lichess_id,
+                   plys: matching_plys
+                 }
+                 | acc
+               ], cache}
             end
 
           {:error, _reason} ->

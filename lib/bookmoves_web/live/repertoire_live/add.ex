@@ -697,12 +697,15 @@ defmodule BookmovesWeb.RepertoireLive.Add do
     {lookup_parent_fen, lookup_child_fens_by_id} =
       canonical_lookup_fens(parent_fen, children)
 
-    child_fens =
-      lookup_child_fens_by_id
-      |> Map.values()
-      |> Enum.uniq()
+    child_moves =
+      Enum.map(children, fn child ->
+        %{
+          fen: Map.get(lookup_child_fens_by_id, child.id, normalize_to_four_field_fen(child.fen)),
+          san: child.san
+        }
+      end)
 
-    case Openings.move_stats_for_children(lookup_parent_fen, child_fens) do
+    case Openings.move_stats_for_children(lookup_parent_fen, child_moves) do
       {:ok, %{parent_games_reached: parent_games_reached, by_child_fen: by_child_fen}} ->
         child_move_stats_by_id =
           Enum.into(children, %{}, fn child ->
@@ -764,11 +767,11 @@ defmodule BookmovesWeb.RepertoireLive.Add do
   @spec normalize_to_four_field_fen(String.t()) :: String.t()
   defp normalize_to_four_field_fen(fen) do
     case String.split(fen, ~r/\s+/, trim: true) do
-      [board, side, castling, _ep_target] ->
-        Enum.join([board, side, castling, "-"], " ")
+      [board, side, castling, ep_target] ->
+        Enum.join([board, side, castling, ep_target], " ")
 
-      [board, side, castling, _ep_target, _halfmove, _fullmove] ->
-        Enum.join([board, side, castling, "-"], " ")
+      [board, side, castling, ep_target, _halfmove, _fullmove] ->
+        Enum.join([board, side, castling, ep_target], " ")
 
       _ ->
         fen
